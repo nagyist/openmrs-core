@@ -21,9 +21,11 @@ import java.util.Locale;
 import java.util.Set;
 
 import org.apache.commons.lang3.StringUtils;
+import org.hibernate.envers.Audited;
 import org.openmrs.annotation.AllowDirectAccess;
 import org.openmrs.api.APIException;
 import org.openmrs.api.context.Context;
+import org.openmrs.api.db.hibernate.HibernateUtil;
 import org.openmrs.obs.ComplexData;
 import org.openmrs.obs.ComplexObsHandler;
 import org.openmrs.util.Format;
@@ -61,6 +63,7 @@ import org.slf4j.LoggerFactory;
  * 
  * @see Encounter
  */
+@Audited
 public class Obs extends BaseFormRecordableOpenmrsData {
 	
 	/**
@@ -150,7 +153,9 @@ public class Obs extends BaseFormRecordableOpenmrsData {
 	private Interpretation interpretation;
 	
 	private Status status = Status.FINAL;
-	
+
+	private ObsReferenceRange referenceRange;
+
 	/** default constructor */
 	public Obs() {
 	}
@@ -675,6 +680,7 @@ public class Obs extends BaseFormRecordableOpenmrsData {
 	/**
 	 * @return Returns the valueCoded.
 	 */
+	
 	public Concept getValueCoded() {
 		return valueCoded;
 	}
@@ -977,8 +983,9 @@ public class Obs extends BaseFormRecordableOpenmrsData {
 				if (getValueNumeric() == null) {
 					return "";
 				} else {
-					if (getConcept() instanceof ConceptNumeric) {
-						ConceptNumeric cn = (ConceptNumeric) getConcept();
+					Concept deproxiedConcept = HibernateUtil.getRealObjectFromProxy(getConcept());
+					if (deproxiedConcept instanceof ConceptNumeric) {
+						ConceptNumeric cn = (ConceptNumeric) deproxiedConcept;
 						if (!cn.getAllowDecimal()) {
 							double d = getValueNumeric();
 							int i = (int) d;
@@ -1238,5 +1245,26 @@ public class Obs extends BaseFormRecordableOpenmrsData {
 	public void setStatus(Status status) {
 		markAsDirty(this.status, status);
 		this.status = status;
+	}
+
+	/**
+	 * Returns the ObsReferenceRange
+	 * @return obsReferenceRange.
+	 * 
+	 * @since 2.7.0
+	 */
+	public ObsReferenceRange getReferenceRange() {
+		return referenceRange;
+	}
+	
+	/**
+	 * Sets ObsReferenceRange
+	 * 
+	 * @param referenceRange ObsReferenceRange to set.
+	 *               
+	 * @since 2.7.0
+	 */
+	public void setReferenceRange(ObsReferenceRange referenceRange) {
+		this.referenceRange = referenceRange;
 	}
 }

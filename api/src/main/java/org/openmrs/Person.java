@@ -11,6 +11,8 @@ package org.openmrs;
 
 import java.text.ParseException;
 import java.text.SimpleDateFormat;
+import java.time.LocalDate;
+import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.Calendar;
 import java.util.Date;
@@ -22,6 +24,8 @@ import java.util.TreeSet;
 
 import javax.persistence.Transient;
 import org.codehaus.jackson.annotate.JsonIgnore;
+import org.hibernate.envers.Audited;
+import org.hibernate.envers.NotAudited;
 import org.hibernate.search.annotations.Analyze;
 import org.hibernate.search.annotations.ContainedIn;
 import org.hibernate.search.annotations.DateBridge;
@@ -42,6 +46,7 @@ import org.springframework.util.StringUtils;
  * 
  * @see org.openmrs.Patient
  */
+@Audited
 public class Person extends BaseChangeableOpenmrsData {
 	
 	public static final long serialVersionUID = 2L;
@@ -81,17 +86,17 @@ public class Person extends BaseChangeableOpenmrsData {
 	private Concept causeOfDeath;
 	
 	private String causeOfDeathNonCoded;
-	
+
 	private User personCreator;
 	
 	private Date personDateCreated;
-	
+
 	private User personChangedBy;
 	
 	private Date personDateChanged;
 	
 	private Boolean personVoided = false;
-	
+
 	private User personVoidedBy;
 	
 	private Date personDateVoided;
@@ -99,6 +104,7 @@ public class Person extends BaseChangeableOpenmrsData {
 	private String personVoidReason;
 	
 	@Field
+	@NotAudited
 	private boolean isPatient;
 	
 	/**
@@ -942,6 +948,76 @@ public class Person extends BaseChangeableOpenmrsData {
 		
 		return age;
 	}
+
+	/**
+	 * Method to get the age of a person in months.
+	 *
+	 * @return the age in months as an Integer e.g. 20 (to mean 20 months)
+	 *
+	 * @since 2.7.0
+	 */
+	public Integer getAgeInMonths() {
+		return getAgeInChronoUnit(ChronoUnit.MONTHS);
+	}
+
+	/**
+	 * Method to get the age of a person in weeks.
+	 *
+	 * @return the age in weeks as an Integer e.g. 20 (to mean 20 weeks)
+	 *
+	 * @since 2.7.0
+	 */
+	public Integer getAgeInWeeks() {
+		return getAgeInChronoUnit(ChronoUnit.WEEKS);
+	}
+
+	/**
+	 * Method to get the age of a person in days.
+	 *
+	 * @return the age in days as an Integer e.g. 20 (to mean 20 days)
+	 *
+	 * @since 2.7.0
+	 */
+	public Integer getAgeInDays() {
+		return getAgeInChronoUnit(ChronoUnit.DAYS);
+	}
+
+	/**
+	 * Gets the age of a person with the specified ChronoUnit.
+	 *
+	 * @param chronoUnit the unit of precision for the age calculation (e.g. WEEKS, MONTHS, YEARS)
+	 * @return the age in the specified unit as an Integer
+	 *
+	 * @since 2.7.0
+	 */
+	private Integer getAgeInChronoUnit(ChronoUnit chronoUnit) {
+		if (this.birthdate == null) {
+			return null;
+		}
+
+		LocalDate birthDate = new java.sql.Date(this.birthdate.getTime()).toLocalDate();
+		LocalDate endDate = LocalDate.now();
+
+		// If date given is after date of death then use date of death as end date
+		if (this.deathDate != null) {
+			LocalDate deathDate = new java.sql.Date(this.deathDate.getTime()).toLocalDate();
+
+			if (endDate.isAfter(deathDate)) {
+				endDate = deathDate;
+			}
+		}
+
+		switch (chronoUnit) {
+			case DAYS:
+				return (int) ChronoUnit.DAYS.between(birthDate, endDate);
+			case WEEKS:
+				return (int) ChronoUnit.WEEKS.between(birthDate, endDate);
+			case MONTHS:
+				return (int) ChronoUnit.MONTHS.between(birthDate, endDate);
+			default:
+				throw new IllegalArgumentException("Unsupported ChronoUnit: " + chronoUnit);
+		}
+	}
 	
 	/**
 	 * Convenience method: sets a person's birth date from an age as of the given date Also sets
@@ -1049,10 +1125,12 @@ public class Person extends BaseChangeableOpenmrsData {
 	 */
 	@Deprecated
 	@JsonIgnore
+	@NotAudited
 	public boolean isPatient() {
 		return getIsPatient();
 	}
 	
+	@NotAudited
 	public boolean getIsPatient() {
 		return isPatient;
 	}
@@ -1094,5 +1172,4 @@ public class Person extends BaseChangeableOpenmrsData {
 		setPersonId(id);
 		
 	}
-	
 }

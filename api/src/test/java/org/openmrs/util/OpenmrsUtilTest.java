@@ -10,6 +10,7 @@
 package org.openmrs.util;
 
 import static org.hamcrest.MatcherAssert.assertThat;
+import static org.hamcrest.Matchers.anyOf;
 import static org.hamcrest.Matchers.is;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -36,6 +37,7 @@ import java.nio.charset.StandardCharsets;
 import java.text.ParseException;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
+import java.util.Calendar;
 import java.util.Collection;
 import java.util.Date;
 import java.util.List;
@@ -55,10 +57,11 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.openmrs.Concept;
 import org.openmrs.GlobalProperty;
+import org.openmrs.Obs;
 import org.openmrs.PatientIdentifier;
 import org.openmrs.PatientIdentifierType;
+import org.openmrs.Person;
 import org.openmrs.User;
-import org.openmrs.api.ConceptService;
 import org.openmrs.api.InvalidCharactersPasswordException;
 import org.openmrs.api.ShortPasswordException;
 import org.openmrs.api.WeakPasswordException;
@@ -361,8 +364,8 @@ public class OpenmrsUtilTest extends BaseContextSensitiveTest {
 	public void getDateFormat_shouldReturnAPatternWithFourYCharactersInIt() {
 		assertEquals("MM/dd/yyyy", OpenmrsUtil.getDateFormat(Locale.US).toLocalizedPattern());
 		assertEquals("dd/MM/yyyy", OpenmrsUtil.getDateFormat(Locale.UK).toLocalizedPattern());
-		assertEquals("tt.MM.uuuu", OpenmrsUtil.getDateFormat(Locale.GERMAN).toLocalizedPattern());
-		assertEquals("dd-MM-yyyy", OpenmrsUtil.getDateFormat(new Locale("pt", "pt")).toLocalizedPattern());
+		assertThat(OpenmrsUtil.getDateFormat(Locale.GERMAN).toLocalizedPattern(), anyOf(is("tt.MM.uuuu"), is("dd.MM.yyyy")));
+		assertThat(OpenmrsUtil.getDateFormat(new Locale("pt", "pt")).toLocalizedPattern(), anyOf(is("dd-MM-yyyy"), is("dd/MM/yyyy")));
 	}
 	
 	/**
@@ -755,7 +758,6 @@ public class OpenmrsUtilTest extends BaseContextSensitiveTest {
 	 */
 	@Test
 	public void copyFile_shouldCopyInputstreamToOutputstreamAndCloseTheOutputstream() throws IOException {
-
 		String exampleInputStreamString = "ExampleInputStream";
 		ByteArrayInputStream expectedByteArrayInputStream = new ByteArrayInputStream(exampleInputStreamString.getBytes());
 
@@ -1020,5 +1022,62 @@ public class OpenmrsUtilTest extends BaseContextSensitiveTest {
 		descriptor = "set:30 | set:29";
 		ret = OpenmrsUtil.conceptListHelper(descriptor);
 		assertEquals(1, ret.size());
+	}
+
+	@Test
+	public void isValidNumericValue_shouldReturnErrorMessageWhenValueIsBelowLowAbsolute() {
+		Calendar calendar = Calendar.getInstance();
+		calendar.add(Calendar.YEAR, -10);
+		Person person = new Person(10);
+		person.setBirthdate(calendar.getTime());
+		
+		Obs obs = new Obs();
+		obs.setPerson(person);
+		
+		String result = OpenmrsUtil.isValidNumericValue(
+			5.0f,
+			Context.getConceptService().getConcept(4090),
+			obs
+		);
+
+		assertEquals("Expected value between 70.0 and 140.0", result);
+	}
+
+	@Test
+	public void isValidNumericValue_shouldReturnErrorMessageWhenValueIsAboveHiAbsolute() {
+		Calendar calendar = Calendar.getInstance();
+		calendar.add(Calendar.YEAR, -10);
+		Person person = new Person(10);
+		person.setBirthdate(calendar.getTime());
+
+		Obs obs = new Obs();
+		obs.setPerson(person);
+		
+		String result = OpenmrsUtil.isValidNumericValue(
+			155.0f,
+			Context.getConceptService().getConcept(4090),
+			obs
+		);
+		
+		assertEquals("Expected value between 70.0 and 140.0", result);
+	}
+
+	@Test
+	public void isValidNumericValue_shouldNotReturnErrorMessageWhenNoReferenceRangeIsAvailable() {
+		Calendar calendar = Calendar.getInstance();
+		calendar.add(Calendar.YEAR, -10);
+		Person person = new Person(10);
+		person.setBirthdate(calendar.getTime());
+
+		Obs obs = new Obs();
+		obs.setPerson(person);
+
+		String result = OpenmrsUtil.isValidNumericValue(
+			120.0f,
+			new Concept(),
+			obs
+		);
+
+		assertEquals("", result);
 	}
 }

@@ -26,10 +26,12 @@ services:
             - db-data:/var/lib/mysql
 
     api:
-        image: openmrs/openmrs-core:${TAG:-head}
-        build: .
-        depends_on:
-            - db
+        image: openmrs/openmrs-core:${TAG:-nightly}
+        build:
+            context: .
+            cache_from:
+                - openmrs/openmrs-core:${TAG:-dev}
+                - openmrs/openmrs-core:${TAG:-nightly}
         ports:
             - "8080:8080"
         environment:
@@ -37,7 +39,8 @@ services:
             OMRS_DB_NAME: ${OMRS_DB_NAME:-openmrs}
             OMRS_DB_USERNAME: ${OMRS_DB_USERNAME:-openmrs}
             OMRS_DB_PASSWORD: ${OMRS_DB_PASSWORD:-openmrs}
-            OMRS_ADMIN_USER_PASSWORD: ${OMRS_ADMIN_USER_PASSWORD-Admin123}
+            OMRS_ADMIN_USER_PASSWORD: ${OMRS_ADMIN_USER_PASSWORD:-Admin123}
+            OMRS_ADMIN_PASSWORD_LOCKED: ${OMRS_ADMIN_PASSWORD_LOCKED:-true}
         healthcheck:
             test: ["CMD", "curl", "-f", "http://localhost:8080/openmrs"]
             interval: 3s

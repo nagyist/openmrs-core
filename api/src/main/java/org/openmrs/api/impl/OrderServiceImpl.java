@@ -30,6 +30,7 @@ import org.openmrs.Order.FulfillerStatus;
 import org.openmrs.OrderGroupAttribute;
 import org.openmrs.OrderGroupAttributeType;
 import org.openmrs.TestOrder;
+import org.openmrs.Visit;
 import org.openmrs.api.APIException;
 import org.openmrs.api.AmbiguousOrderException;
 import org.openmrs.api.CannotDeleteObjectInUseException;
@@ -114,6 +115,14 @@ public class OrderServiceImpl extends BaseOpenmrsService implements OrderService
 	 */
 	@Override
 	public OrderGroup saveOrderGroup(OrderGroup orderGroup) throws APIException {
+		return saveOrderGroup(orderGroup, null);
+	}
+
+	/**
+	 * @see org.openmrs.api.OrderService#saveOrderGroup(org.openmrs.OrderGroup, org.openmrs.api.OrderContext)
+	 */
+	@Override
+	public OrderGroup saveOrderGroup(OrderGroup orderGroup, OrderContext orderContext) throws APIException {
 		if (orderGroup.getId() == null) {
 			// an OrderGroup requires an encounter, which has a patient, so it
 			// is odd that OrderGroup has a patient field. There is no obvious
@@ -126,13 +135,13 @@ public class OrderServiceImpl extends BaseOpenmrsService implements OrderService
 		for (Order order : orders) {
 			if (order.getId() == null) {
 				order.setEncounter(orderGroup.getEncounter());
-				Context.getOrderService().saveOrder(order, null);
+				Context.getOrderService().saveOrder(order, orderContext);
 			}
 		}
 		Set<OrderGroup> nestedGroups = orderGroup.getNestedOrderGroups();
 		if (nestedGroups != null) {
 			for (OrderGroup nestedGroup : nestedGroups) {
-				Context.getOrderService().saveOrderGroup(nestedGroup);
+				Context.getOrderService().saveOrderGroup(nestedGroup, orderContext);
 			}
 		}
 		return orderGroup;
@@ -553,6 +562,15 @@ public class OrderServiceImpl extends BaseOpenmrsService implements OrderService
 	 */
 	@Override
 	public List<Order> getOrders(Patient patient, CareSetting careSetting, OrderType orderType, boolean includeVoided) {
+		return this.getOrders(patient, null, careSetting, orderType, includeVoided);
+	}
+	
+	/**
+	 * @see OrderService#getOrders(org.openmrs.Patient, org.openmrs.Visit, org.openmrs.CareSetting,
+	 *      org.openmrs.OrderType, boolean)
+	 */
+	@Override
+	public List<Order> getOrders(Patient patient, Visit visit, CareSetting careSetting, OrderType orderType, boolean includeVoided) {
 		if (patient == null) {
 			throw new IllegalArgumentException("Patient is required");
 		}
@@ -565,7 +583,7 @@ public class OrderServiceImpl extends BaseOpenmrsService implements OrderService
 			orderTypes.add(orderType);
 			orderTypes.addAll(getSubtypes(orderType, true));
 		}
-		return dao.getOrders(patient, careSetting, orderTypes, includeVoided, false);
+		return dao.getOrders(patient, visit, careSetting, orderTypes, includeVoided, false);
 	}
 	
 	/**
@@ -678,6 +696,16 @@ public class OrderServiceImpl extends BaseOpenmrsService implements OrderService
 	@Override
 	@Transactional(readOnly = true)
 	public List<Order> getActiveOrders(Patient patient, OrderType orderType, CareSetting careSetting, Date asOfDate) {
+		return this.getActiveOrders(patient, null, orderType, careSetting, asOfDate);
+	}
+	
+	/**
+	 * @see org.openmrs.api.OrderService#getActiveOrders(org.openmrs.Patient, org.openmrs.Visit, org.openmrs.OrderType,
+	 *      org.openmrs.CareSetting, java.util.Date)
+	 */
+	@Override
+	@Transactional(readOnly = true)
+	public List<Order> getActiveOrders(Patient patient, Visit visit, OrderType orderType, CareSetting careSetting, Date asOfDate) {
 		if (patient == null) {
 			throw new IllegalArgumentException("Patient is required when fetching active orders");
 		}
@@ -690,7 +718,7 @@ public class OrderServiceImpl extends BaseOpenmrsService implements OrderService
 			orderTypes.add(orderType);
 			orderTypes.addAll(getSubtypes(orderType, true));
 		}
-		return dao.getActiveOrders(patient, orderTypes, careSetting, asOfDate);
+		return dao.getActiveOrders(patient, visit, orderTypes, careSetting, asOfDate);
 	}
 	
 	/**

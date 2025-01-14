@@ -10,20 +10,26 @@
 package org.openmrs.api;
 
 import static org.hamcrest.CoreMatchers.containsString;
+import static org.hamcrest.CoreMatchers.equalTo;
 import static org.hamcrest.CoreMatchers.hasItem;
+import static org.hamcrest.CoreMatchers.hasItems;
+import static org.hamcrest.CoreMatchers.is;
 import static org.hamcrest.CoreMatchers.not;
 import static org.hamcrest.CoreMatchers.nullValue;
 import static org.hamcrest.MatcherAssert.assertThat;
+import static org.hamcrest.Matchers.contains;
+import static org.hamcrest.Matchers.containsInAnyOrder;
+import static org.hamcrest.Matchers.emptyIterable;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
-import static org.junit.jupiter.api.Assertions.fail;
 import static org.mockito.Mockito.mock;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Date;
 import java.util.List;
 import java.util.Locale;
@@ -35,8 +41,12 @@ import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
 import org.openmrs.GlobalProperty;
 import org.openmrs.ImplementationId;
+import org.openmrs.Privilege;
+import org.openmrs.Role;
 import org.openmrs.User;
 import org.openmrs.api.context.Context;
+import org.openmrs.api.context.Credentials;
+import org.openmrs.api.context.UsernamePasswordCredentials;
 import org.openmrs.customdatatype.datatype.BooleanDatatype;
 import org.openmrs.customdatatype.datatype.DateDatatype;
 import org.openmrs.messagesource.MutableMessageSource;
@@ -45,6 +55,7 @@ import org.openmrs.test.jupiter.BaseContextSensitiveTest;
 import org.openmrs.util.HttpClient;
 import org.openmrs.util.LocaleUtility;
 import org.openmrs.util.OpenmrsConstants;
+import org.openmrs.util.PrivilegeConstants;
 import org.springframework.cache.Cache;
 import org.springframework.cache.CacheManager;
 import org.springframework.cache.interceptor.SimpleKeyGenerator;
@@ -291,6 +302,57 @@ public class AdministrationServiceTest extends BaseContextSensitiveTest {
 			assertTrue(property.getPropertyValue().startsWith("correct-value"));
 		}
 	}
+
+	@Test
+	public void getGlobalPropertiesByInvalidPrefix_shouldReturnEmptyList() {
+		executeDataSet("org/openmrs/api/include/AdministrationServiceTest-globalproperties.xml");
+
+		String invalidPrefix = "non.existing.prefix.";
+		List<GlobalProperty> properties = adminService.getGlobalPropertiesByPrefix(invalidPrefix);
+
+		assertTrue(properties.isEmpty());
+	}
+
+	@Test
+	public void getGlobalPropertiesByPrefix_shouldReturnEmptyWhenPrefixIsNull() {
+		executeDataSet("org/openmrs/api/include/AdministrationServiceTest-globalproperties.xml");
+		List<GlobalProperty> properties = adminService.getGlobalPropertiesByPrefix(null);
+		
+		assertNotNull(properties);
+		assertTrue(properties.isEmpty());
+	}
+
+	@Test
+	public void getGlobalPropertiesBySuffix_shouldReturnAllRelevantGlobalPropertiesInTheDatabase() {
+		executeDataSet("org/openmrs/api/include/AdministrationServiceTest-globalproperties.xml");
+
+		List<GlobalProperty> properties = adminService.getGlobalPropertiesBySuffix(".abcd");
+
+		assertNotNull(properties);
+		assertTrue(properties.size() > 0);
+		for (GlobalProperty property : properties) {
+			assertTrue(property.getProperty().endsWith(".abcd"));
+		}
+	}
+
+	@Test
+	public void getGlobalPropertiesByInvalidSuffix_shouldReturnEmptyList() {
+		executeDataSet("org/openmrs/api/include/AdministrationServiceTest-globalproperties.xml");
+
+		String invalidSuffix = "non.existing.suffix.";
+		List<GlobalProperty> properties = adminService.getGlobalPropertiesBySuffix(invalidSuffix);
+
+		assertTrue(properties.isEmpty());
+	}
+
+	@Test
+	public void getGlobalPropertiesBySuffix_shouldReturnEmptyWhenSuffixIsNull() {
+		executeDataSet("org/openmrs/api/include/AdministrationServiceTest-globalproperties.xml");
+		List<GlobalProperty> properties = adminService.getGlobalPropertiesBySuffix(null);
+
+		assertNotNull(properties);
+		assertTrue(properties.isEmpty());
+	}
 	
 	@Test
 	public void getAllowedLocales_shouldNotFailIfNotGlobalPropertyForLocalesAllowedDefinedYet() {
@@ -349,7 +411,7 @@ public class AdministrationServiceTest extends BaseContextSensitiveTest {
 		executeDataSet(ADMIN_INITIAL_DATA_XML);
 		assertEquals(allGlobalPropertiesSize + 9, adminService.getAllGlobalProperties().size());
 	}
-	
+
 	@Test
 	public void getAllowedLocales_shouldReturnAtLeastOneLocaleIfNoLocalesDefinedInDatabaseYet() {
 		assertTrue(adminService.getAllowedLocales().size() > 0);
@@ -486,6 +548,249 @@ public class AdministrationServiceTest extends BaseContextSensitiveTest {
 		// try to get a global property with invalid case
 		String noprop = adminService.getGlobalProperty("ANOTher-global-property");
 		assertEquals(orig, noprop);
+	}
+	
+	@Test
+	public void filterGlobalPropertiesByViewPrivilege_shouldFilterGlobalPropertiesIfUserIsNotAllowedToViewSomeGlobalProperties() {
+		executeDataSet(ADMIN_INITIAL_DATA_XML);
+		
+		final int originalSize = adminService.getAllGlobalProperties().size();
+		// create a new test global property and add view privileges
+		GlobalProperty property = new GlobalProperty();
+		property.setProperty("test_property");
+		property.setPropertyValue("test_property_value");
+		property.setViewPrivilege(Context.getUserService().getPrivilege(PrivilegeConstants.GET_GLOBAL_PROPERTIES));
+		adminService.saveGlobalProperty(property);
+		// assert new test global property is saved properly
+		List<GlobalProperty> properties = adminService.getAllGlobalProperties();
+		assertEquals(originalSize + 1, properties.size());
+
+		// authenticate new user to test view privilege
+		Context.logout();
+		Context.authenticate(getTestUserCredentials());
+		// have to add privilege in order to be able to call getAllGlobalProperties() method for new user
+		Context.addProxyPrivilege(PrivilegeConstants.GET_GLOBAL_PROPERTIES);
+		
+		properties = adminService.getAllGlobalProperties();
+		int actualSize = properties.size();
+		
+		Context.removeProxyPrivilege(PrivilegeConstants.GET_GLOBAL_PROPERTIES);
+		Context.logout();
+		
+		assertEquals(actualSize, originalSize);
+		assertTrue(!properties.contains(property));
+	}
+	
+	/**
+	 * @see org.openmrs.api.AdministrationService#getGlobalProperty(java.lang.String)
+	 */
+	@Test
+	public void getGlobalProperty_shouldFailIfUserHasNoPrivileges() {
+		executeDataSet(ADMIN_INITIAL_DATA_XML);
+		GlobalProperty property = getGlobalPropertyWithViewPrivilege();
+
+		// authenticate new user without privileges
+		Context.logout();
+		Context.authenticate(getTestUserCredentials());
+		
+		APIAuthenticationException exception = assertThrows(APIAuthenticationException.class, () -> adminService.getGlobalProperty(property.getProperty()));
+		assertEquals(exception.getMessage(), String.format("Privileges required: %s", property.getViewPrivilege()));
+	}
+	
+	/**
+	 * @see org.openmrs.api.AdministrationService#getGlobalProperty(java.lang.String)
+	 */
+	@Test
+	public void getGlobalProperty_shouldReturnGlobalPropertyIfUserIsAllowedToView() {
+		executeDataSet(ADMIN_INITIAL_DATA_XML);
+		GlobalProperty property = getGlobalPropertyWithViewPrivilege();
+
+		// authenticate new user without privileges
+		Context.logout();
+		Context.authenticate(getTestUserCredentials());
+		// add required privilege to user
+		Role role = Context.getUserService().getRole("Provider");
+		role.addPrivilege(property.getViewPrivilege());
+		Context.getAuthenticatedUser().addRole(role);
+		assertNotNull(adminService.getGlobalProperty(property.getProperty()));
+	}
+
+	/**
+	 * @see org.openmrs.api.AdministrationService#getGlobalPropertyObject(java.lang.String)
+	 */
+	@Test
+	public void getGlobalPropertyObject_shouldFailIfUserHasNoPrivileges() {
+		executeDataSet(ADMIN_INITIAL_DATA_XML);
+		GlobalProperty property = getGlobalPropertyWithViewPrivilege();
+
+		// authenticate new user without privileges
+		Context.logout();
+		Context.authenticate(getTestUserCredentials());
+
+		APIException exception = assertThrows(APIException.class, () -> adminService.getGlobalPropertyObject(property.getProperty()));
+		assertEquals(exception.getMessage(), String.format("Privileges required: %s",
+			property.getViewPrivilege()));
+	}
+
+	/**
+	 * @see org.openmrs.api.AdministrationService#getGlobalPropertyObject(java.lang.String)
+	 */
+	@Test
+	public void getGlobalPropertyObject_shouldReturnGlobalPropertyIfUserIsAllowedToView() {
+		executeDataSet(ADMIN_INITIAL_DATA_XML);
+		GlobalProperty property = getGlobalPropertyWithViewPrivilege();
+
+		// authenticate new user without privileges
+		Context.logout();
+		Context.authenticate(getTestUserCredentials());
+		// add required privilege to user
+		Role role = Context.getUserService().getRole("Provider");
+		role.addPrivilege(property.getViewPrivilege());
+		Context.getAuthenticatedUser().addRole(role);
+
+		assertNotNull(adminService.getGlobalPropertyObject(property.getProperty()));
+	}
+	
+	/**
+	 * @see org.openmrs.api.AdministrationService#updateGlobalProperty(java.lang.String, java.lang.String)
+	 */
+	@Test
+	public void updateGlobalProperty_shouldFailIfUserIsNotAllowedToEditGlobalProperty() {
+		executeDataSet(ADMIN_INITIAL_DATA_XML);
+		GlobalProperty property = getGlobalPropertyWithEditPrivilege();
+		assertEquals("anothervalue", property.getPropertyValue());
+
+		// authenticate new user without privileges
+		Context.logout();
+		Context.authenticate(getTestUserCredentials());
+		
+		APIException exception = assertThrows(APIException.class, () -> adminService.updateGlobalProperty(property.getProperty(), "new-value"));
+		assertEquals(exception.getMessage(), String.format("Privileges required: %s",
+			property.getEditPrivilege()));
+	}
+	
+	/**
+	 * @see org.openmrs.api.AdministrationService#updateGlobalProperty(java.lang.String, java.lang.String)
+	 */
+	@Test
+	public void updateGlobalProperty_shouldUpdateIfUserIsAllowedToEditGlobalProperty() {
+		executeDataSet(ADMIN_INITIAL_DATA_XML);
+		GlobalProperty property = getGlobalPropertyWithEditPrivilege();
+		GlobalProperty globalPropertyWithViewPrivilege = getGlobalPropertyWithViewPrivilege();
+		assertEquals("anothervalue", property.getPropertyValue());
+
+		// authenticate new user without privileges
+		Context.logout();
+		Context.authenticate(getTestUserCredentials());
+		// add required privilege to user
+		Role role = Context.getUserService().getRole("Provider");
+		role.addPrivilege(property.getEditPrivilege());
+
+		role.addPrivilege(globalPropertyWithViewPrivilege.getViewPrivilege());
+		
+		Context.getAuthenticatedUser().addRole(role);
+		
+		adminService.updateGlobalProperty(property.getProperty(), "new-value");
+		String newValue = adminService.getGlobalProperty(property.getProperty());
+		assertEquals("new-value", newValue);
+	}
+	
+	/**
+	 * @see org.openmrs.api.AdministrationService#saveGlobalProperty(org.openmrs.GlobalProperty)
+	 */
+	@Test
+	public void saveGlobalProperty_shouldFailIfUserIsNotSupposedToEditGlobalProperty() {
+		executeDataSet(ADMIN_INITIAL_DATA_XML);
+		GlobalProperty property = getGlobalPropertyWithEditPrivilege();
+
+		// authenticate new user without privileges
+		Context.logout();
+		Context.authenticate(getTestUserCredentials());
+		// have to add privilege in order to be able to call saveGlobalProperty(GlobalProperty) method
+		Context.addProxyPrivilege(PrivilegeConstants.MANAGE_GLOBAL_PROPERTIES);
+		
+		APIException exception = assertThrows(APIException.class, () -> adminService.saveGlobalProperty(property));
+		assertEquals(exception.getMessage(), String.format("Privilege: %s, required to edit globalProperty: %s",
+			property.getEditPrivilege(), property.getProperty()));
+	}
+	
+	/**
+	 * @see org.openmrs.api.AdministrationService#purgeGlobalProperty(org.openmrs.GlobalProperty)
+	 */
+	@Test
+	public void purgeGlobalProperty_shouldFailIfUserIsNotSupposedToDeleteGlobalProperty() {
+		executeDataSet(ADMIN_INITIAL_DATA_XML);
+		GlobalProperty property = getGlobalPropertyWithDeletePrivilege();
+
+		// authenticate new user without privileges
+		Context.logout();
+		Context.authenticate(getTestUserCredentials());
+		// have to add privilege in order to be able to call purgeGlobalProperty(GlobalProperty) method
+		Context.addProxyPrivilege(PrivilegeConstants.PURGE_GLOBAL_PROPERTIES);
+		
+		APIException exception = assertThrows(APIException.class, () -> adminService.purgeGlobalProperty(property));
+		assertEquals(exception.getMessage(), String.format("Privilege: %s, required to purge globalProperty: %s",
+			property.getDeletePrivilege(), property.getProperty()));
+	}
+	
+	/**
+	 * Gets global property and adds view privilege to it
+	 *
+	 * @return global property having non-null view privilege
+	 */
+	private GlobalProperty getGlobalPropertyWithViewPrivilege() {
+		GlobalProperty property = adminService.getGlobalPropertyObject("another-global-property");
+		assertNotNull(property);
+		
+		Privilege viewPrivilege = Context.getUserService().getPrivilege(PrivilegeConstants.GET_GLOBAL_PROPERTIES);
+		property.setViewPrivilege(viewPrivilege);
+		property = adminService.saveGlobalProperty(property);
+		assertNotNull(property.getViewPrivilege());
+		
+		return property;
+	}
+	
+	/**
+	 * Gets global property and adds edit privilege to it
+	 *
+	 * @return global property having non-null edit privilege
+	 */
+	private GlobalProperty getGlobalPropertyWithEditPrivilege() {
+		GlobalProperty property = adminService.getGlobalPropertyObject("another-global-property");
+		assertNotNull(property);
+		
+		Privilege editPrivilege = Context.getUserService().getPrivilege(PrivilegeConstants.MANAGE_GLOBAL_PROPERTIES);
+		property.setEditPrivilege(editPrivilege);
+		property = adminService.saveGlobalProperty(property);
+		assertNotNull(property.getEditPrivilege());
+		
+		return property;
+	}
+	
+	/**
+	 * Gets global property and adds delete privilege to it
+	 *
+	 * @return global property having non-null delete privilege
+	 */
+	private GlobalProperty getGlobalPropertyWithDeletePrivilege() {
+		GlobalProperty property = adminService.getGlobalPropertyObject("another-global-property");
+		assertNotNull(property);
+		
+		Privilege deletePrivilege = Context.getUserService().getPrivilege("Some Privilege For Delete Global Properties");
+		property.setDeletePrivilege(deletePrivilege);
+		property = adminService.saveGlobalProperty(property);
+		assertNotNull(property.getDeletePrivilege());
+		
+		return property;
+	}
+
+	/**
+	 * Gets the credentials of the test_user to be authenticated
+	 *
+	 * @return test_user credentials
+	 */
+	private Credentials getTestUserCredentials() {
+		return new UsernamePasswordCredentials("test_user", "test");
 	}
 	
 	@Test
@@ -807,5 +1112,52 @@ public class AdministrationServiceTest extends BaseContextSensitiveTest {
 
 	private List<Locale> getCachedSearchLocalesForCurrentUser() {
 		return (List<Locale>) getCacheForCurrentUser().get();
+	}
+
+	@Test
+	public void getSerializerWhitelistTypes_shouldReturnPackagesAndIndividualClassesDefinedInGPS() {
+		//given
+		adminService.saveGlobalProperty(
+			new GlobalProperty("reporting.serializer.whitelist.types", 
+				"org.hibernate.*, org.hibernate.mapping.**"));
+		adminService.saveGlobalProperty(
+			new GlobalProperty("serialization.xstream.serializer.whitelist.types",
+				"org.hibernate.mapping.Column, org.hibernate.mapping.**"));
+
+		//when
+		List<String> serializerWhitelistTypes = adminService.getSerializerWhitelistTypes();
+
+		//then
+		assertThat(serializerWhitelistTypes, containsInAnyOrder("org.hibernate.*", "org.hibernate.mapping.**", 
+			"org.hibernate.mapping.Column", "org.hibernate.mapping.**", "hierarchyOf:org.openmrs.OpenmrsObject", 
+			"hierarchyOf:org.openmrs.OpenmrsMetadata", "hierarchyOf:org.openmrs.OpenmrsData", 
+			"hierarchyOf:org.openmrs.customdatatype.CustomDatatype", 
+			"hierarchyOf:org.openmrs.customdatatype.SingleCustomValue", 
+			"hierarchyOf:org.openmrs.customdatatype.CustomValueDescriptor", 
+			"hierarchyOf:org.openmrs.customdatatype.Customizable", "hierarchyOf:org.openmrs.layout.LayoutTemplate", 
+			"hierarchyOf:org.openmrs.layout.LayoutSupport", "hierarchyOf:org.openmrs.obs.ComplexData", 
+			"hierarchyOf:org.openmrs.messagesource.PresentationMessage", 
+			"hierarchyOf:org.openmrs.person.PersonMergeLogData"));
+	}
+
+	@Test
+	public void getSerializerWhitelistTypes_shouldReturnDefaultCommonClassesIfNoGPS() {
+		//given
+		List<GlobalProperty> gps = adminService.getGlobalPropertiesByPrefix(".serializer.whitelist.types");
+		assertThat(gps, is(emptyIterable()));
+		
+		//when
+		List<String> serializerWhitelistTypes = adminService.getSerializerWhitelistTypes();
+
+		//then
+		assertThat(serializerWhitelistTypes, containsInAnyOrder("hierarchyOf:org.openmrs.OpenmrsObject",
+			"hierarchyOf:org.openmrs.OpenmrsMetadata", "hierarchyOf:org.openmrs.OpenmrsData",
+			"hierarchyOf:org.openmrs.customdatatype.CustomDatatype",
+			"hierarchyOf:org.openmrs.customdatatype.SingleCustomValue",
+			"hierarchyOf:org.openmrs.customdatatype.CustomValueDescriptor",
+			"hierarchyOf:org.openmrs.customdatatype.Customizable", "hierarchyOf:org.openmrs.layout.LayoutTemplate",
+			"hierarchyOf:org.openmrs.layout.LayoutSupport", "hierarchyOf:org.openmrs.obs.ComplexData",
+			"hierarchyOf:org.openmrs.messagesource.PresentationMessage",
+			"hierarchyOf:org.openmrs.person.PersonMergeLogData"));
 	}
 }

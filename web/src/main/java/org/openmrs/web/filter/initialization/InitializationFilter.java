@@ -3,7 +3,7 @@
  * v. 2.0. If a copy of the MPL was not distributed with this file, You can
  * obtain one at http://mozilla.org/MPL/2.0/. OpenMRS is also distributed under
  * the terms of the Healthcare Disclaimer located at http://openmrs.org/license.
- *
+ * 
  * Copyright (C) OpenMRS Inc. OpenMRS is a registered trademark and the OpenMRS
  * graphic logo is a trademark of OpenMRS Inc.
  */
@@ -30,6 +30,8 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Properties;
 import java.util.Random;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.Future;
 import java.util.zip.ZipInputStream;
 import javax.servlet.FilterChain;
 import javax.servlet.FilterConfig;
@@ -38,13 +40,17 @@ import javax.servlet.ServletRequest;
 import javax.servlet.ServletResponse;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
+
 import liquibase.changelog.ChangeSet;
 import org.apache.commons.io.IOUtils;
 import org.openmrs.ImplementationId;
 import org.openmrs.api.APIAuthenticationException;
 import org.openmrs.api.PasswordException;
+import org.openmrs.api.UserService;
 import org.openmrs.api.context.Context;
 import org.openmrs.api.context.ContextAuthenticationException;
+import org.openmrs.api.context.UsernamePasswordCredentials;
+import org.openmrs.api.impl.UserServiceImpl;
 import org.openmrs.liquibase.ChangeLogDetective;
 import org.openmrs.liquibase.ChangeLogVersionFinder;
 import org.openmrs.module.MandatoryModuleException;
@@ -57,6 +63,7 @@ import org.openmrs.util.DatabaseUpdaterLiquibaseProvider;
 import org.openmrs.util.DatabaseUtil;
 import org.openmrs.util.InputRequiredException;
 import org.openmrs.util.OpenmrsConstants;
+import org.openmrs.util.OpenmrsThreadPoolHolder;
 import org.openmrs.util.OpenmrsUtil;
 import org.openmrs.util.PrivilegeConstants;
 import org.openmrs.util.Security;
@@ -196,7 +203,7 @@ public class InitializationFilter extends StartupFilter {
 	 */
 	@Override
 	protected void doGet(HttpServletRequest httpRequest, HttpServletResponse httpResponse)
-	        throws IOException, ServletException {
+		throws IOException, ServletException {
 		loadInstallationScriptIfPresent();
 		
 		// we need to save current user language in references map since it will be used when template
@@ -235,7 +242,7 @@ public class InitializationFilter extends StartupFilter {
 					result.put("executedTasks", initJob.getExecutedTasks());
 					result.put("completedPercentage", initJob.getCompletedPercentage());
 				}
-
+				
 				addLogLinesToResponse(result);
 			}
 			
@@ -243,7 +250,7 @@ public class InitializationFilter extends StartupFilter {
 			writer.write(toJSONString(result));
 			writer.close();
 		} else if (InitializationWizardModel.INSTALL_METHOD_AUTO.equals(wizardModel.installMethod)
-		        || httpRequest.getServletPath().equals("/" + AUTO_RUN_OPENMRS)) {
+			|| httpRequest.getServletPath().equals("/" + AUTO_RUN_OPENMRS)) {
 			autoRunOpenMRS(httpRequest);
 			referenceMap.put("isInstallationStarted", true);
 			httpResponse.setContentType("text/html");
@@ -284,13 +291,13 @@ public class InitializationFilter extends StartupFilter {
 				wizardModel.canWrite = runtimeProperties.canWrite();
 				
 				wizardModel.databaseConnection = Context.getRuntimeProperties().getProperty("connection.url",
-				    wizardModel.databaseConnection);
+					wizardModel.databaseConnection);
 				
 				wizardModel.currentDatabaseUsername = Context.getRuntimeProperties().getProperty("connection.username",
-				    wizardModel.currentDatabaseUsername);
+					wizardModel.currentDatabaseUsername);
 				
 				wizardModel.currentDatabasePassword = Context.getRuntimeProperties().getProperty("connection.password",
-				    wizardModel.currentDatabasePassword);
+					wizardModel.currentDatabasePassword);
 			}
 			
 			wizardModel.runtimePropertiesPath = runtimeProperties.getAbsolutePath();
@@ -309,18 +316,18 @@ public class InitializationFilter extends StartupFilter {
 			wizardModel.databaseConnection = script.getProperty("connection.url", wizardModel.databaseConnection);
 			wizardModel.databaseDriver = script.getProperty("connection.driver_class", wizardModel.databaseDriver);
 			wizardModel.currentDatabaseUsername = script.getProperty("connection.username",
-			    wizardModel.currentDatabaseUsername);
+				wizardModel.currentDatabaseUsername);
 			wizardModel.currentDatabasePassword = script.getProperty("connection.password",
-			    wizardModel.currentDatabasePassword);
+				wizardModel.currentDatabasePassword);
 			
 			String hasCurrentOpenmrsDatabase = script.getProperty("has_current_openmrs_database");
 			if (hasCurrentOpenmrsDatabase != null) {
 				wizardModel.hasCurrentOpenmrsDatabase = Boolean.valueOf(hasCurrentOpenmrsDatabase);
 			}
 			wizardModel.createDatabaseUsername = script.getProperty("create_database_username",
-			    wizardModel.createDatabaseUsername);
+				wizardModel.createDatabaseUsername);
 			wizardModel.createDatabasePassword = script.getProperty("create_database_password",
-			    wizardModel.createDatabasePassword);
+				wizardModel.createDatabasePassword);
 			
 			String createTables = script.getProperty("create_tables");
 			if (createTables != null) {
@@ -369,14 +376,14 @@ public class InitializationFilter extends StartupFilter {
 	 */
 	@Override
 	protected void doPost(HttpServletRequest httpRequest, HttpServletResponse httpResponse)
-	        throws IOException, ServletException {
+		throws IOException, ServletException {
 		String page = httpRequest.getParameter("page");
 		Map<String, Object> referenceMap = new HashMap<>();
 		// we need to save current user language in references map since it will be used when template
 		// will be rendered
 		if (httpRequest.getSession().getAttribute(FilterUtil.LOCALE_ATTRIBUTE) != null) {
 			referenceMap.put(FilterUtil.LOCALE_ATTRIBUTE,
-			    httpRequest.getSession().getAttribute(FilterUtil.LOCALE_ATTRIBUTE));
+				httpRequest.getSession().getAttribute(FilterUtil.LOCALE_ATTRIBUTE));
 		}
 		
 		// if any body has already started installation
@@ -411,20 +418,20 @@ public class InitializationFilter extends StartupFilter {
 				wizardModel.canWrite = runtimeProperties.canWrite();
 				
 				wizardModel.databaseConnection = Context.getRuntimeProperties().getProperty("connection.url",
-				    wizardModel.databaseConnection);
+					wizardModel.databaseConnection);
 				
 				wizardModel.currentDatabaseUsername = Context.getRuntimeProperties().getProperty("connection.username",
-				    wizardModel.currentDatabaseUsername);
+					wizardModel.currentDatabaseUsername);
 				
 				wizardModel.currentDatabasePassword = Context.getRuntimeProperties().getProperty("connection.password",
-				    wizardModel.currentDatabasePassword);
+					wizardModel.currentDatabasePassword);
 			}
 			
 			wizardModel.runtimePropertiesPath = runtimeProperties.getAbsolutePath();
 			
 			checkLocaleAttributes(httpRequest);
 			referenceMap.put(FilterUtil.LOCALE_ATTRIBUTE,
-			    httpRequest.getSession().getAttribute(FilterUtil.LOCALE_ATTRIBUTE));
+				httpRequest.getSession().getAttribute(FilterUtil.LOCALE_ATTRIBUTE));
 			log.info("Locale stored in session is " + httpRequest.getSession().getAttribute(FilterUtil.LOCALE_ATTRIBUTE));
 			
 			httpResponse.setContentType("text/html");
@@ -433,9 +440,9 @@ public class InitializationFilter extends StartupFilter {
 		} else if (INSTALL_METHOD.equals(page)) {
 			if (goBack(httpRequest)) {
 				referenceMap.put(FilterUtil.REMEMBER_ATTRIBUTE,
-				    httpRequest.getSession().getAttribute(FilterUtil.REMEMBER_ATTRIBUTE) != null);
+					httpRequest.getSession().getAttribute(FilterUtil.REMEMBER_ATTRIBUTE) != null);
 				referenceMap.put(FilterUtil.LOCALE_ATTRIBUTE,
-				    httpRequest.getSession().getAttribute(FilterUtil.LOCALE_ATTRIBUTE));
+					httpRequest.getSession().getAttribute(FilterUtil.LOCALE_ATTRIBUTE));
 				renderTemplate(CHOOSE_LANG, referenceMap, httpResponse);
 				return;
 			}
@@ -458,10 +465,11 @@ public class InitializationFilter extends StartupFilter {
 				renderTemplate(INSTALL_METHOD, referenceMap, httpResponse);
 				return;
 			}
-			wizardModel.databaseConnection = httpRequest.getParameter("database_connection");;
+			wizardModel.databaseConnection = httpRequest.getParameter("database_connection");
+			;
 			
 			wizardModel.createDatabaseUsername = Context.getRuntimeProperties().getProperty("connection.username",
-			    wizardModel.createDatabaseUsername);
+				wizardModel.createDatabaseUsername);
 			
 			wizardModel.createUserUsername = wizardModel.createDatabaseUsername;
 			
@@ -489,7 +497,7 @@ public class InitializationFilter extends StartupFilter {
 			
 			try {
 				loadedDriverString = DatabaseUtil.loadDatabaseDriver(wizardModel.databaseConnection,
-				    wizardModel.databaseDriver);
+					wizardModel.databaseDriver);
 			}
 			catch (ClassNotFoundException e) {
 				errors.put(ErrorMessageConstants.ERROR_DB_DRIVER_CLASS_REQ, null);
@@ -582,10 +590,10 @@ public class InitializationFilter extends StartupFilter {
 			if ("yes".equals(httpRequest.getParameter("current_database_user"))) {
 				wizardModel.currentDatabaseUsername = httpRequest.getParameter("current_database_username");
 				checkForEmptyValue(wizardModel.currentDatabaseUsername, errors,
-				    ErrorMessageConstants.ERROR_DB_CUR_USER_NAME_REQ);
+					ErrorMessageConstants.ERROR_DB_CUR_USER_NAME_REQ);
 				wizardModel.currentDatabasePassword = httpRequest.getParameter("current_database_password");
 				checkForEmptyValue(wizardModel.currentDatabasePassword, errors,
-				    ErrorMessageConstants.ERROR_DB_CUR_USER_PSWD_REQ);
+					ErrorMessageConstants.ERROR_DB_CUR_USER_PSWD_REQ);
 				wizardModel.hasCurrentDatabaseUser = true;
 				wizardModel.createDatabaseUser = false;
 			} else {
@@ -600,7 +608,7 @@ public class InitializationFilter extends StartupFilter {
 			
 			if (errors.isEmpty()) { // go to next page
 				page = InitializationWizardModel.INSTALL_METHOD_TESTING.equals(wizardModel.installMethod) ? WIZARD_COMPLETE
-				        : OTHER_RUNTIME_PROPS;
+					: OTHER_RUNTIME_PROPS;
 			}
 			
 			renderTemplate(page, referenceMap, httpResponse);
@@ -754,7 +762,7 @@ public class InitializationFilter extends StartupFilter {
 				if (TestInstallUtil.testConnection(wizardModel.remoteUrl)) {
 					//Check if the test module is installed by connecting to its setting page
 					if (TestInstallUtil
-					        .testConnection(wizardModel.remoteUrl.concat(RELEASE_TESTING_MODULE_PATH + "settings.htm"))) {
+						.testConnection(wizardModel.remoteUrl.concat(RELEASE_TESTING_MODULE_PATH + "settings.htm"))) {
 						
 						wizardModel.remoteUsername = httpRequest.getParameter("username");
 						wizardModel.remotePassword = httpRequest.getParameter("password");
@@ -765,8 +773,8 @@ public class InitializationFilter extends StartupFilter {
 							//check if the username and password are valid
 							try {
 								TestInstallUtil.getResourceInputStream(
-								    wizardModel.remoteUrl + RELEASE_TESTING_MODULE_PATH + "verifycredentials.htm",
-								    wizardModel.remoteUsername, wizardModel.remotePassword);
+									wizardModel.remoteUrl + RELEASE_TESTING_MODULE_PATH + "verifycredentials.htm",
+									wizardModel.remoteUsername, wizardModel.remotePassword);
 							}
 							catch (APIAuthenticationException e) {
 								log.debug("Error generated: ", e);
@@ -845,10 +853,10 @@ public class InitializationFilter extends StartupFilter {
 	private void createSimpleSetup(String databaseRootPassword, String addDemoData) {
 		setDatabaseNameIfInTestMode();
 		wizardModel.databaseConnection = Context.getRuntimeProperties().getProperty("connection.url",
-		    wizardModel.databaseConnection);
+			wizardModel.databaseConnection);
 		
 		wizardModel.createDatabaseUsername = Context.getRuntimeProperties().getProperty("connection.username",
-		    wizardModel.createDatabaseUsername);
+			wizardModel.createDatabaseUsername);
 		
 		wizardModel.createUserUsername = wizardModel.createDatabaseUsername;
 		
@@ -969,21 +977,21 @@ public class InitializationFilter extends StartupFilter {
 	 * @return true/false whether it was verified or not
 	 */
 	private boolean verifyConnection(String connectionUsername, String connectionPassword,
-	        String databaseConnectionFinalUrl) {
+		String databaseConnectionFinalUrl) {
 		try {
 			// verify connection
 			//Set Database Driver using driver String
 			Class.forName(loadedDriverString).newInstance();
 			Connection tempConnection = DriverManager.getConnection(databaseConnectionFinalUrl, connectionUsername,
-			    connectionPassword);
+				connectionPassword);
 			tempConnection.close();
 			return true;
 			
 		}
 		catch (Exception e) {
 			errors.put("User account " + connectionUsername + " does not work. " + e.getMessage()
-			        + " See the error log for more details",
-			    null); // TODO internationalize this
+					+ " See the error log for more details",
+				null); // TODO internationalize this
 			log.warn("Error while checking the connection user account", e);
 			return false;
 		}
@@ -1086,7 +1094,7 @@ public class InitializationFilter extends StartupFilter {
 	}
 	
 	private void importTestDataSet(InputStream in, String connectionUrl, String connectionUsername,
-	        String connectionPassword) throws IOException {
+		String connectionPassword) throws IOException {
 		File tempFile = null;
 		FileOutputStream fileOut = null;
 		try {
@@ -1111,7 +1119,7 @@ public class InitializationFilter extends StartupFilter {
 			int port = uri.getPort();
 			
 			TestInstallUtil.addTestData(host, port, wizardModel.databaseName, connectionUsername, connectionPassword,
-			    tempFile.getAbsolutePath());
+				tempFile.getAbsolutePath());
 		}
 		finally {
 			IOUtils.closeQuietly(in);
@@ -1155,7 +1163,8 @@ public class InitializationFilter extends StartupFilter {
 			
 			String tempDatabaseConnection;
 			if (sql.contains("create database")) {
-				tempDatabaseConnection = wizardModel.databaseConnection.replace("@DBNAME@", ""); // make this dbname agnostic so we can create the db
+				tempDatabaseConnection = wizardModel.databaseConnection.replace("@DBNAME@",
+					""); // make this dbname agnostic so we can create the db
 			} else {
 				tempDatabaseConnection = wizardModel.databaseConnection.replace("@DBNAME@", wizardModel.databaseName);
 			}
@@ -1239,7 +1248,7 @@ public class InitializationFilter extends StartupFilter {
 	 */
 	private class InitializationCompletion {
 		
-		private Thread thread;
+		private final Future<Void> future;
 		
 		private int steps = 0;
 		
@@ -1281,15 +1290,13 @@ public class InitializationFilter extends StartupFilter {
 		public void start() {
 			setStepsComplete(0);
 			setInitializationComplete(false);
-			thread.start();
 		}
 		
 		public void waitForCompletion() {
 			try {
-				thread.join();
-			}
-			catch (InterruptedException e) {
-				log.error("Error generated", e);
+				future.get();
+			} catch (InterruptedException | ExecutionException e) {
+				throw new RuntimeException(e);
 			}
 		}
 		
@@ -1391,7 +1398,7 @@ public class InitializationFilter extends StartupFilter {
 							int result;
 							if (sql != null) {
 								result = executeStatement(false, wizardModel.createDatabaseUsername,
-								    wizardModel.createDatabasePassword, sql, wizardModel.databaseName);
+									wizardModel.createDatabasePassword, sql, wizardModel.databaseName);
 							} else {
 								result = 1;
 							}
@@ -1411,7 +1418,8 @@ public class InitializationFilter extends StartupFilter {
 							setExecutingTask(WizardTask.CREATE_DB_USER);
 							connectionUsername = wizardModel.databaseName + "_user";
 							if (connectionUsername.length() > 16) {
-								connectionUsername = wizardModel.databaseName.substring(0, 11) + "_user"; // trim off enough to leave space for _user at the end
+								connectionUsername = wizardModel.databaseName.substring(0, 11)
+									+ "_user"; // trim off enough to leave space for _user at the end
 							}
 							
 							connectionPassword.append("");
@@ -1428,7 +1436,7 @@ public class InitializationFilter extends StartupFilter {
 							// connect via jdbc with root user and create an openmrs user
 							String host = "'%'";
 							if (wizardModel.databaseConnection.contains("localhost")
-							        || wizardModel.databaseConnection.contains("127.0.0.1")) {
+								|| wizardModel.databaseConnection.contains("127.0.0.1")) {
 								host = "'localhost'";
 							}
 							
@@ -1440,7 +1448,7 @@ public class InitializationFilter extends StartupFilter {
 							}
 							
 							executeStatement(true, wizardModel.createUserUsername, wizardModel.createUserPassword, sql,
-							    connectionUsername);
+								connectionUsername);
 							
 							if (isCurrentDatabase(DATABASE_MYSQL)) {
 								sql = "create user '?'@" + host + " identified by '?'";
@@ -1449,7 +1457,7 @@ public class InitializationFilter extends StartupFilter {
 							}
 							
 							if (-1 != executeStatement(false, wizardModel.createUserUsername, wizardModel.createUserPassword,
-							    sql, connectionUsername, connectionPassword.toString())) {
+								sql, connectionUsername, connectionPassword.toString())) {
 								wizardModel.workLog.add("Created user " + connectionUsername);
 							} else {
 								// if error occurs stop
@@ -1462,11 +1470,11 @@ public class InitializationFilter extends StartupFilter {
 							if (isCurrentDatabase(DATABASE_MYSQL)) {
 								sql = "GRANT ALL ON `?`.* TO '?'@" + host;
 								result = executeStatement(false, wizardModel.createUserUsername,
-								    wizardModel.createUserPassword, sql, wizardModel.databaseName, connectionUsername);
+									wizardModel.createUserPassword, sql, wizardModel.databaseName, connectionUsername);
 							} else if (isCurrentDatabase(DATABASE_POSTGRESQL)) {
 								sql = "ALTER USER `?` WITH SUPERUSER";
 								result = executeStatement(false, wizardModel.createUserUsername,
-								    wizardModel.createUserPassword, sql, connectionUsername);
+									wizardModel.createUserPassword, sql, connectionUsername);
 							}
 							
 							// throw the user back to the main screen if this error occurs
@@ -1475,7 +1483,7 @@ public class InitializationFilter extends StartupFilter {
 								return;
 							} else {
 								wizardModel.workLog.add("Granted user " + connectionUsername + " all privileges to database "
-								        + wizardModel.databaseName);
+									+ wizardModel.databaseName);
 							}
 							
 							addExecutedTask(WizardTask.CREATE_DB_USER);
@@ -1486,14 +1494,14 @@ public class InitializationFilter extends StartupFilter {
 						}
 						
 						String finalDatabaseConnectionString = wizardModel.databaseConnection.replace("@DBNAME@",
-						    wizardModel.databaseName);
+							wizardModel.databaseName);
 						
 						finalDatabaseConnectionString = finalDatabaseConnectionString.replace("@APPLICATIONDATADIR@",
-						    OpenmrsUtil.getApplicationDataDirectory().replace("\\", "/"));
+							OpenmrsUtil.getApplicationDataDirectory().replace("\\", "/"));
 						
 						// verify that the database connection works
 						if (!verifyConnection(connectionUsername, connectionPassword.toString(),
-						    finalDatabaseConnectionString)) {
+							finalDatabaseConnectionString)) {
 							setMessage("Verify that the database connection works");
 							// redirect to setup page if we got an error
 							reportError("Unable to connect to database", DEFAULT_PAGE);
@@ -1522,9 +1530,9 @@ public class InitializationFilter extends StartupFilter {
 						runtimeProperties.put("auto_update_database", wizardModel.autoUpdateDatabase.toString());
 						final Encoder base64 = Base64.getEncoder();
 						runtimeProperties.put(OpenmrsConstants.ENCRYPTION_VECTOR_RUNTIME_PROPERTY,
-						    new String(base64.encode(Security.generateNewInitVector()), StandardCharsets.UTF_8));
+							new String(base64.encode(Security.generateNewInitVector()), StandardCharsets.UTF_8));
 						runtimeProperties.put(OpenmrsConstants.ENCRYPTION_KEY_RUNTIME_PROPERTY,
-						    new String(base64.encode(Security.generateNewSecretKey()), StandardCharsets.UTF_8));
+							new String(base64.encode(Security.generateNewSecretKey()), StandardCharsets.UTF_8));
 						
 						Properties properties = Context.getRuntimeProperties();
 						properties.putAll(runtimeProperties);
@@ -1550,8 +1558,8 @@ public class InitializationFilter extends StartupFilter {
 							@Override
 							public void executing(ChangeSet changeSet, int numChangeSetsToRun) {
 								setMessage(message + " (" + i++ + "/" + numChangeSetsToRun + "): Author: "
-								        + changeSet.getAuthor() + " Comments: " + changeSet.getComments() + " Description: "
-								        + changeSet.getDescription());
+									+ changeSet.getAuthor() + " Comments: " + changeSet.getComments() + " Description: "
+									+ changeSet.getDescription());
 								float numChangeSetsToRunFloat = (float) numChangeSetsToRun;
 								float j = (float) i;
 								setCompletedPercentage(Math.round(j * 100 / numChangeSetsToRunFloat));
@@ -1563,9 +1571,9 @@ public class InitializationFilter extends StartupFilter {
 							// use liquibase to create core data + tables
 							try {
 								String liquibaseSchemaFileName = changeLogVersionFinder.getLatestSchemaSnapshotFilename()
-								        .get();
+									.get();
 								String liquibaseCoreDataFileName = changeLogVersionFinder.getLatestCoreDataSnapshotFilename()
-								        .get();
+									.get();
 								
 								setMessage("Executing " + liquibaseSchemaFileName);
 								setExecutingTask(WizardTask.CREATE_TABLES);
@@ -1573,7 +1581,7 @@ public class InitializationFilter extends StartupFilter {
 								log.debug("executing Liquibase file '{}' ", liquibaseSchemaFileName);
 								
 								DatabaseUpdater.executeChangelog(liquibaseSchemaFileName,
-								    new PrintingChangeSetExecutorCallback("OpenMRS schema file"));
+									new PrintingChangeSetExecutorCallback("OpenMRS schema file"));
 								addExecutedTask(WizardTask.CREATE_TABLES);
 								
 								//reset for this task
@@ -1583,14 +1591,14 @@ public class InitializationFilter extends StartupFilter {
 								log.debug("executing Liquibase file '{}' ", liquibaseCoreDataFileName);
 								
 								DatabaseUpdater.executeChangelog(liquibaseCoreDataFileName,
-								    new PrintingChangeSetExecutorCallback("OpenMRS core data file"));
+									new PrintingChangeSetExecutorCallback("OpenMRS core data file"));
 								wizardModel.workLog.add("Created database tables and added core data");
 								addExecutedTask(WizardTask.ADD_CORE_DATA);
 								
 							}
 							catch (Exception e) {
 								reportError(ErrorMessageConstants.ERROR_DB_CREATE_TABLES_OR_ADD_DEMO_DATA, DEFAULT_PAGE,
-								    e.getMessage());
+									e.getMessage());
 								log.warn("Error while trying to create tables and demo data", e);
 							}
 						}
@@ -1603,13 +1611,13 @@ public class InitializationFilter extends StartupFilter {
 								
 								try {
 									InputStream inData = TestInstallUtil.getResourceInputStream(
-									    wizardModel.remoteUrl + RELEASE_TESTING_MODULE_PATH + "generateTestDataSet.form",
-									    wizardModel.remoteUsername, wizardModel.remotePassword);
+										wizardModel.remoteUrl + RELEASE_TESTING_MODULE_PATH + "generateTestDataSet.form",
+										wizardModel.remoteUsername, wizardModel.remotePassword);
 									
 									setCompletedPercentage(40);
 									setMessage("Loading imported test data...");
 									importTestDataSet(inData, finalDatabaseConnectionString, connectionUsername,
-									    connectionPassword.toString());
+										connectionPassword.toString());
 									wizardModel.workLog.add("Imported test data");
 									addExecutedTask(WizardTask.IMPORT_TEST_DATA);
 									
@@ -1619,8 +1627,8 @@ public class InitializationFilter extends StartupFilter {
 									setExecutingTask(WizardTask.ADD_MODULES);
 									
 									InputStream inModules = TestInstallUtil.getResourceInputStream(
-									    wizardModel.remoteUrl + RELEASE_TESTING_MODULE_PATH + "getModules.htm",
-									    wizardModel.remoteUsername, wizardModel.remotePassword);
+										wizardModel.remoteUrl + RELEASE_TESTING_MODULE_PATH + "getModules.htm",
+										wizardModel.remoteUsername, wizardModel.remotePassword);
 									
 									setCompletedPercentage(90);
 									setMessage("Adding imported modules...");
@@ -1635,7 +1643,7 @@ public class InitializationFilter extends StartupFilter {
 								catch (APIAuthenticationException e) {
 									log.warn("Unable to authenticate as a User with the System Developer role");
 									reportError(ErrorMessageConstants.UPDATE_ERROR_UNABLE_AUTHENTICATE,
-									    TESTING_REMOTE_DETAILS_SETUP, "");
+										TESTING_REMOTE_DETAILS_SETUP, "");
 									return;
 								}
 							}
@@ -1656,14 +1664,14 @@ public class InitializationFilter extends StartupFilter {
 								log.debug("executing Liquibase file '{}' ", LIQUIBASE_DEMO_DATA);
 								
 								DatabaseUpdater.executeChangelog(LIQUIBASE_DEMO_DATA,
-								    new PrintingChangeSetExecutorCallback("OpenMRS demo patients, users, and forms"));
+									new PrintingChangeSetExecutorCallback("OpenMRS demo patients, users, and forms"));
 								wizardModel.workLog.add("Added demo data");
 								
 								addExecutedTask(WizardTask.ADD_DEMO_DATA);
 							}
 							catch (Exception e) {
 								reportError(ErrorMessageConstants.ERROR_DB_CREATE_TABLES_OR_ADD_DEMO_DATA, DEFAULT_PAGE,
-								    e.getMessage());
+									e.getMessage());
 								log.warn("Error while trying to add demo data", e);
 							}
 						}
@@ -1680,21 +1688,21 @@ public class InitializationFilter extends StartupFilter {
 								version = changeLogVersionFinder.getLatestSnapshotVersion().get();
 							} else {
 								version = changeLogDetective.getInitialLiquibaseSnapshotVersion(DatabaseUpdater.CONTEXT,
-								    new DatabaseUpdaterLiquibaseProvider());
+									new DatabaseUpdaterLiquibaseProvider());
 							}
 							
 							log.debug(
-							    "updating the database with versions of liquibase-update-to-latest files greater than '{}'",
-							    version);
+								"updating the database with versions of liquibase-update-to-latest files greater than '{}'",
+								version);
 							
 							List<String> changelogs = changeLogVersionFinder
-							        .getUpdateFileNames(changeLogVersionFinder.getUpdateVersionsGreaterThan(version));
+								.getUpdateFileNames(changeLogVersionFinder.getUpdateVersionsGreaterThan(version));
 							
 							for (String changelog : changelogs) {
 								log.debug("applying Liquibase changelog '{}'", changelog);
 								
 								DatabaseUpdater.executeChangelog(changelog,
-								    new PrintingChangeSetExecutorCallback("executing Liquibase changelog " + changelog));
+									new PrintingChangeSetExecutorCallback("executing Liquibase changelog " + changelog));
 							}
 							addExecutedTask(WizardTask.UPDATE_TO_LATEST);
 						}
@@ -1718,7 +1726,7 @@ public class InitializationFilter extends StartupFilter {
 						try {
 							fos = new FileOutputStream(getRuntimePropertiesFile());
 							OpenmrsUtil.storeProperties(runtimeProperties, fos,
-							    "Auto generated by OpenMRS initialization wizard");
+								"Auto generated by OpenMRS initialization wizard");
 							wizardModel.workLog.add("Saved runtime properties file " + getRuntimePropertiesFile());
 							
 							/*
@@ -1729,12 +1737,12 @@ public class InitializationFilter extends StartupFilter {
 							 */
 							wizardModel.workLog.add("Adjusting file posix properties to user readonly");
 							if (getRuntimePropertiesFile().setReadable(false, false)
-							        && getRuntimePropertiesFile().setReadable(true)) {
+								&& getRuntimePropertiesFile().setReadable(true)) {
 								wizardModel.workLog
-								        .add("Successfully adjusted RuntimePropertiesFile to disallow world to read it");
+									.add("Successfully adjusted RuntimePropertiesFile to disallow world to read it");
 							} else {
 								wizardModel.workLog
-								        .add("Unable to adjust RuntimePropertiesFile to disallow world to read it");
+									.add("Unable to adjust RuntimePropertiesFile to disallow world to read it");
 							}
 							// don't need to catch errors here because we tested it at the beginning of the wizard
 						}
@@ -1781,8 +1789,21 @@ public class InitializationFilter extends StartupFilter {
 							// change the admin user password from "test" to what they input above
 							if (wizardModel.createTables) {
 								try {
-									Context.authenticate("admin", "test");
+									Context.authenticate(new UsernamePasswordCredentials("admin", "test"));
+									
+									Properties props = Context.getRuntimeProperties();
+									String initValue = props.getProperty(UserService.ADMIN_PASSWORD_LOCKED_PROPERTY);
+									props.setProperty(UserService.ADMIN_PASSWORD_LOCKED_PROPERTY, "false");
+									Context.setRuntimeProperties(props);
+									
 									Context.getUserService().changePassword("test", wizardModel.adminUserPassword);
+									
+									if (initValue == null) {
+										props.remove(UserService.ADMIN_PASSWORD_LOCKED_PROPERTY);
+									} else {
+										props.setProperty(UserService.ADMIN_PASSWORD_LOCKED_PROPERTY, initValue);
+									}
+									Context.setRuntimeProperties(props);
 									Context.logout();
 								}
 								catch (ContextAuthenticationException ex) {
@@ -1808,7 +1829,6 @@ public class InitializationFilter extends StartupFilter {
 							reportError(ErrorMessageConstants.ERROR_COMPLETE_STARTUP, DEFAULT_PAGE, e.getMessage());
 							return;
 						}
-
 						
 						// set this so that the wizard isn't run again on next page load
 						Context.closeSession();
@@ -1828,22 +1848,22 @@ public class InitializationFilter extends StartupFilter {
 							// 		When done and the user and put in their say, call DatabaseUpdater.update(Map);
 							//		with the user's question/answer pairs
 							log.warn(
-							    "Unable to continue because user input is required for the db updates and we cannot do anything about that right now");
+								"Unable to continue because user input is required for the db updates and we cannot do anything about that right now");
 							reportError(ErrorMessageConstants.ERROR_INPUT_REQ, DEFAULT_PAGE);
 							return;
 						}
 						catch (MandatoryModuleException mandatoryModEx) {
 							log.warn(
-							    "A mandatory module failed to start. Fix the error or unmark it as mandatory to continue.",
-							    mandatoryModEx);
+								"A mandatory module failed to start. Fix the error or unmark it as mandatory to continue.",
+								mandatoryModEx);
 							reportError(ErrorMessageConstants.ERROR_MANDATORY_MOD_REQ, DEFAULT_PAGE,
-							    mandatoryModEx.getMessage());
+								mandatoryModEx.getMessage());
 							return;
 						}
 						catch (OpenmrsCoreModuleException coreModEx) {
 							log.warn(
-							    "A core module failed to start. Make sure that all core modules (with the required minimum versions) are installed and starting properly.",
-							    coreModEx);
+								"A core module failed to start. Make sure that all core modules (with the required minimum versions) are installed and starting properly.",
+								coreModEx);
 							reportError(ErrorMessageConstants.ERROR_CORE_MOD_REQ, DEFAULT_PAGE, coreModEx.getMessage());
 							return;
 						}
@@ -1867,7 +1887,7 @@ public class InitializationFilter extends StartupFilter {
 				}
 			};
 			
-			thread = new Thread(r);
+			future = OpenmrsThreadPoolHolder.threadExecutor.submit(() -> { r.run(); return null; });
 		}
 	}
 	
@@ -1886,8 +1906,8 @@ public class InitializationFilter extends StartupFilter {
 		}
 		catch (ClassNotFoundException e) {
 			log.error("The given database driver class was not found. "
-			        + "Please ensure that the database driver jar file is on the class path "
-			        + "(like in the webapp's lib folder)");
+				+ "Please ensure that the database driver jar file is on the class path "
+				+ "(like in the webapp's lib folder)");
 		}
 		
 		return loadedDriverString;
@@ -1902,8 +1922,8 @@ public class InitializationFilter extends StartupFilter {
 	private static boolean skipDatabaseSetupPage() {
 		Properties props = OpenmrsUtil.getRuntimeProperties(WebConstants.WEBAPP_NAME);
 		return (props != null && StringUtils.hasText(props.getProperty("connection.url"))
-		        && StringUtils.hasText(props.getProperty("connection.username"))
-		        && StringUtils.hasText(props.getProperty("connection.password")));
+			&& StringUtils.hasText(props.getProperty("connection.username"))
+			&& StringUtils.hasText(props.getProperty("connection.password")));
 	}
 	
 	/**
@@ -1914,7 +1934,7 @@ public class InitializationFilter extends StartupFilter {
 	 */
 	private static boolean goBack(HttpServletRequest httpRequest) {
 		return "Back".equals(httpRequest.getParameter("back"))
-		        || (httpRequest.getParameter("back.x") != null && httpRequest.getParameter("back.y") != null);
+			|| (httpRequest.getParameter("back.x") != null && httpRequest.getParameter("back.y") != null);
 	}
 	
 	/**

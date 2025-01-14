@@ -630,11 +630,10 @@ public class PatientServiceImpl extends BaseOpenmrsService implements PatientSer
 		ProgramWorkflowService programService = Context.getProgramWorkflowService();
 		for (PatientProgram pp : programService.getPatientPrograms(notPreferred, null, null, null, null, null, false)) {
 			if (!pp.getVoided()) {
-				PatientProgram enroll = pp.copy();
-				enroll.setPatient(preferred);
-				log.debug("Copying patientProgram {} to {}", pp.getPatientProgramId(), preferred.getPatientId());
-				PatientProgram persisted = programService.savePatientProgram(enroll);
-				mergedData.addCreatedProgram(persisted.getUuid());
+				pp.setPatient(preferred);
+				log.debug("Moving patientProgram {} to {}", pp.getPatientProgramId(), preferred.getPatientId());
+				PatientProgram persisted = programService.savePatientProgram(pp);
+				mergedData.addMovedProgram(persisted.getUuid());
 			}
 		}
 	}
@@ -1318,8 +1317,7 @@ public class PatientServiceImpl extends BaseOpenmrsService implements PatientSer
 			return getIdentifierValidator((Class<IdentifierValidator>) Context.loadClass(pivClassName));
 		}
 		catch (ClassNotFoundException e) {
-			log.error("Could not find patient identifier validator " + pivClassName, e);
-			return getDefaultIdentifierValidator();
+			throw new PatientIdentifierException("Could not find patient identifier validator " + pivClassName, e);
 		}
 	}
 	

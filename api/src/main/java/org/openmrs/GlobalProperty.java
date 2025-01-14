@@ -12,6 +12,7 @@ package org.openmrs;
 import java.util.Date;
 
 import org.codehaus.jackson.annotate.JsonIgnore;
+import org.hibernate.envers.Audited;
 import org.openmrs.customdatatype.CustomDatatype;
 import org.openmrs.customdatatype.CustomDatatypeUtil;
 import org.openmrs.customdatatype.CustomValueDescriptor;
@@ -21,6 +22,7 @@ import org.openmrs.customdatatype.SingleCustomValue;
  * Global properties are simple key-value pairs persisted in the database GPs can be thought of as
  * something similar to environment variables used in operating systems.
  */
+@Audited
 public class GlobalProperty extends BaseOpenmrsObject implements CustomValueDescriptor, SingleCustomValue<GlobalProperty> {
 	
 	private static final long serialVersionUID = 1L;
@@ -47,6 +49,13 @@ public class GlobalProperty extends BaseOpenmrsObject implements CustomValueDesc
 	private User changedBy;
 	
 	private Date dateChanged;
+	
+	private Privilege viewPrivilege;
+	
+	private Privilege editPrivilege;
+	
+	private Privilege deletePrivilege;
+	
 	
 	/**
 	 * Default empty constructor
@@ -336,5 +345,65 @@ public class GlobalProperty extends BaseOpenmrsObject implements CustomValueDesc
 	 */
 	public void setDateChanged(Date dateChanged) {
 		this.dateChanged = dateChanged;
+	}
+
+	/**
+	 * Gets privilege which can view this globalProperty
+	 * @return the viewPrivilege the privilege instance
+	 * 
+	 * @since 2.7.0
+	 */
+	public Privilege getViewPrivilege() {
+		return viewPrivilege;
+	}
+
+	/**
+	 * Sets privilege which can view this globalProperty
+	 * @param viewPrivilege the viewPrivilege to set
+	 *                      
+	 * @since 2.7.0
+	 */
+	public void setViewPrivilege(Privilege viewPrivilege) {
+		this.viewPrivilege = viewPrivilege;
+	}
+
+	/**
+	 * Gets privilege which can edit this globalProperty
+	 * @return the editPrivilege the privilege instance
+	 * 
+	 * @since 2.7.0
+	 */
+	public Privilege getEditPrivilege() {
+		return editPrivilege;
+	}
+
+	/**
+	 * Sets privilege which can edit this globalProperty
+	 * @param editPrivilege the editPrivilege to set
+	 *                      
+	 * @since 2.7.0
+	 */
+	public void setEditPrivilege(Privilege editPrivilege) {
+		this.editPrivilege = editPrivilege;
+	}
+
+	/**
+	 * Get privilege which can delete this globalProperty
+	 * @return the deletePrivilege the privilege instance
+	 *
+	 * @since 2.7.0
+	 */
+	public Privilege getDeletePrivilege() {
+		return deletePrivilege;
+	}
+
+	/**
+	 * Sets privilege which can delete this globalProperty
+	 * @param deletePrivilege the deletePrivilege to set
+	 *
+	 * @since 2.7.0
+	 */
+	public void setDeletePrivilege(Privilege deletePrivilege) {
+		this.deletePrivilege = deletePrivilege;
 	}
 }

@@ -15,6 +15,7 @@ import java.util.Locale;
 import java.util.MissingResourceException;
 import java.util.Set;
 
+import org.apache.commons.lang3.LocaleUtils;
 import org.openmrs.GlobalProperty;
 import org.openmrs.api.GlobalPropertyListener;
 import org.openmrs.api.context.Context;
@@ -33,7 +34,7 @@ public class LocaleUtility implements GlobalPropertyListener {
 	 * Cached version of the default locale. This is cached so that we don't have to look it up in
 	 * the global property table every page load
 	 */
-	private static Locale defaultLocaleCache = null;
+	private static volatile Locale defaultLocaleCache = null;
 	
 	/**
 	 * Cached version of the localeAllowedList. This is cached so that we don't have to look it up
@@ -54,36 +55,40 @@ public class LocaleUtility implements GlobalPropertyListener {
 	 */
 	public static Locale getDefaultLocale() {
 		if (defaultLocaleCache == null) {
-			if (Context.isSessionOpen()) {
-				try {
-					String locale = Context.getAdministrationService().getGlobalProperty(
-					    OpenmrsConstants.GLOBAL_PROPERTY_DEFAULT_LOCALE);
-					
-					if (StringUtils.hasLength(locale)) {
+			synchronized (LocaleUtility.class) {
+				if (defaultLocaleCache == null) {
+					if (Context.isSessionOpen()) {
 						try {
-							defaultLocaleCache = fromSpecification(locale);
+							Context.addProxyPrivilege(PrivilegeConstants.GET_GLOBAL_PROPERTIES);
+							String locale = Context.getAdministrationService().getGlobalProperty(
+								OpenmrsConstants.GLOBAL_PROPERTY_DEFAULT_LOCALE);
+
+							if (StringUtils.hasLength(locale)) {
+								try {
+									defaultLocaleCache = fromSpecification(locale);
+								} catch (Exception t) {
+									log.warn("Unable to parse default locale global property value: {}", locale, t);
+								}
+							}
+						} catch (Exception e) {
+							// don't print the full stack-trace by default
+							log.warn("Unable to get locale global property value. {}", e.getMessage());
+							log.debug("Exception caught while capturing locale global property value.", e);
+						} finally {
+							Context.removeProxyPrivilege(PrivilegeConstants.GET_GLOBAL_PROPERTIES);
 						}
-						catch (Exception t) {
-							log.warn("Unable to parse default locale global property value: " + locale, t);
+
+						// if we weren't able to load the locale from the global property,
+						// use the default one
+						if (defaultLocaleCache == null) {
+							defaultLocaleCache = fromSpecification(OpenmrsConstants.GLOBAL_PROPERTY_DEFAULT_LOCALE_DEFAULT_VALUE);
 						}
+					} else {
+						// if session is not open, return the default locale without caching
+						return fromSpecification(OpenmrsConstants.GLOBAL_PROPERTY_DEFAULT_LOCALE_DEFAULT_VALUE);
 					}
 				}
-				catch (Exception e) {
-					// swallow most of the stack trace for most users
-					log.warn("Unable to get locale global property value. " + e.getMessage());
-					log.trace("Unable to get locale global property value", e);
-				}
-				
-				// if we weren't able to load the locale from the global property,
-				// use the default one
-				if (defaultLocaleCache == null) {
-					defaultLocaleCache = fromSpecification(OpenmrsConstants.GLOBAL_PROPERTY_DEFAULT_LOCALE_DEFAULT_VALUE);
-				}
-			} else {
-				// if session is not open, return the default locale without caching
-				return fromSpecification(OpenmrsConstants.GLOBAL_PROPERTY_DEFAULT_LOCALE_DEFAULT_VALUE);
 			}
-			
 		}
 		
 		return defaultLocaleCache;
@@ -127,9 +132,25 @@ public class LocaleUtility implements GlobalPropertyListener {
 	 * <strong>Should</strong> get locale from language code country code and variant
 	 */
 	public static Locale fromSpecification(String localeSpecification) {
-		Locale createdLocale = null;
+		Locale createdLocale;
 		
 		localeSpecification = localeSpecification.trim();
+		
+		try {
+			createdLocale = LocaleUtils.toLocale(localeSpecification);
+		} catch (IllegalArgumentException e) {
+			if (localeSpecification.matches("[a-zA-Z]{2}[-_][a-zA-Z]{2,}")) {
+				return null;
+			} else {
+				createdLocale = generateLocaleFromLegacyFormat(localeSpecification);
+			}
+		}
+		
+		return createdLocale;
+	}
+	
+	private static Locale generateLocaleFromLegacyFormat(String localeSpecification) {
+		Locale createdLocale = null;
 		
 		String[] localeComponents = localeSpecification.split("_");
 		if (localeComponents.length == 1) {
@@ -137,8 +158,7 @@ public class LocaleUtility implements GlobalPropertyListener {
 		} else if (localeComponents.length == 2) {
 			createdLocale = new Locale(localeComponents[0], localeComponents[1]);
 		} else if (localeComponents.length > 2) {
-			String variant = localeSpecification.substring(localeSpecification.indexOf(localeComponents[2])); // gets everything after the
-			// second underscore
+			String variant = localeSpecification.substring(localeSpecification.indexOf(localeComponents[2]));
 			createdLocale = new Locale(localeComponents[0], localeComponents[1], variant);
 		}
 		

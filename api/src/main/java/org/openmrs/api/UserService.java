@@ -35,6 +35,8 @@ import org.openmrs.notification.MessageException;
  * @see org.openmrs.api.context.Context
  */
 public interface UserService extends OpenmrsService {
+
+	public static final String ADMIN_PASSWORD_LOCKED_PROPERTY = "admin_password_locked";
 	
 	/**
 	 * Create user with given password.
@@ -208,6 +210,7 @@ public interface UserService extends OpenmrsService {
 	 * @throws APIException
 	 * <strong>Should</strong> return all privileges in the system
 	 */
+	@Authorized(PrivilegeConstants.MANAGE_PRIVILEGES)
 	public List<Privilege> getAllPrivileges() throws APIException;
 	
 	/**
@@ -217,6 +220,7 @@ public interface UserService extends OpenmrsService {
 	 * @throws APIException
 	 * <strong>Should</strong> return all roles in the system
 	 */
+	@Authorized(PrivilegeConstants.MANAGE_ROLES)
 	public List<Role> getAllRoles() throws APIException;
 	
 	/**
@@ -272,6 +276,7 @@ public interface UserService extends OpenmrsService {
 	 * @throws APIException
 	 * <strong>Should</strong> fetch role for given role name
 	 */
+	@Authorized(PrivilegeConstants.GET_ROLES)
 	public Role getRole(String r) throws APIException;
 	
 	/**
@@ -282,6 +287,7 @@ public interface UserService extends OpenmrsService {
 	 * <strong>Should</strong> find object given valid uuid
 	 * <strong>Should</strong> return null if no object found with given uuid
 	 */
+	@Authorized(PrivilegeConstants.GET_ROLES)
 	public Role getRoleByUuid(String uuid) throws APIException;
 	
 	/**
@@ -291,6 +297,7 @@ public interface UserService extends OpenmrsService {
 	 * @throws APIException
 	 * <strong>Should</strong> fetch privilege for given name
 	 */
+	@Authorized(PrivilegeConstants.GET_PRIVILEGES)
 	public Privilege getPrivilege(String p) throws APIException;
 	
 	/**
@@ -302,6 +309,7 @@ public interface UserService extends OpenmrsService {
 	 * <strong>Should</strong> return null if no object found with given uuid
 	 * <strong>Should</strong> fetch privilege for given uuid
 	 */
+	@Authorized(PrivilegeConstants.GET_PRIVILEGES)
 	public Privilege getPrivilegeByUuid(String uuid) throws APIException;
 	
 	/**
@@ -318,16 +326,18 @@ public interface UserService extends OpenmrsService {
 	/**
 	 * Changes the current user's password.
 	 * 
-	 * @param pw current password
-	 * @param pw2 new password
+	 * @param oldPassword current password
+	 * @param newPassword new password
 	 * @throws APIException
 	 * <strong>Should</strong> match on correctly hashed sha1 stored password
 	 * <strong>Should</strong> match on incorrectly hashed sha1 stored password
 	 * <strong>Should</strong> match on sha512 hashed password
 	 * <strong>Should</strong> be able to update password multiple times
+	 * <strong>Should</strong> respect locking via runtime properties
 	 */
+	@Authorized
 	@Logging(ignoredArgumentIndexes = { 0, 1 })
-	public void changePassword(String pw, String pw2) throws APIException;
+	public void changePassword(String oldPassword, String newPassword) throws APIException;
 
 	/**
 	 * Changes password of {@link User} passed in
@@ -379,6 +389,7 @@ public interface UserService extends OpenmrsService {
 	 * <strong>Should</strong> match on correctly hashed stored password
 	 * <strong>Should</strong> match on incorrectly hashed stored password
 	 */
+	@Authorized
 	@Logging(ignoreAllArgumentValues = true)
 	public void changeQuestionAnswer(String pw, String q, String a) throws APIException;
 	
@@ -469,6 +480,7 @@ public interface UserService extends OpenmrsService {
 	 * <strong>Should</strong> add property with given key and value when key does not already exist
 	 * <strong>Should</strong> modify property with given key and value when key already exists
 	 */
+	@Authorized
 	public User setUserProperty(User user, String key, String value) throws APIException;
 	
 	/**
@@ -482,6 +494,7 @@ public interface UserService extends OpenmrsService {
 	 * <strong>Should</strong> throw error when user is not authorized to edit users
 	 * <strong>Should</strong> remove user property for given user and key
 	 */
+	@Authorized
 	public User removeUserProperty(User user, String key) throws APIException;
 	
 	/**
@@ -490,6 +503,7 @@ public interface UserService extends OpenmrsService {
 	 * 
 	 * @return new system id
 	 */
+	@Authorized
 	public String generateSystemId();
 	
 	/**
@@ -559,6 +573,7 @@ public interface UserService extends OpenmrsService {
 	 * Sets a user's activation key
 	 * @param user The user for which the activation key will be set
 	 */
+	@Authorized(PrivilegeConstants.EDIT_USER_PASSWORDS)
 	public User setUserActivationKey(User user) throws MessageException;
 	
 	/**
@@ -574,5 +589,20 @@ public interface UserService extends OpenmrsService {
 	 * @return the default Locale of the given user, or the system locale if unspecified
 	 * @since 2.3.6, 2.4.6, 2.5.4, 2.6.0
 	 */
+	@Authorized
 	Locale getDefaultLocaleForUser(User user);
+
+	/**
+	 * Retrieves the last login time of the user in Unix Timestamp
+	 * 
+	 * @param user the subject user
+	 * @return timestamp representing last login time (e.g. 1717414410587)
+	 * @since 2.7.0
+	 * 
+	 * @should return empty string on last login time if a different user is logged in
+	 * @should not be empty if user is authenticated
+	 * @should return empty string on last login time if property not set
+	 */
+	@Authorized
+	String getLastLoginTime(User user);
 }

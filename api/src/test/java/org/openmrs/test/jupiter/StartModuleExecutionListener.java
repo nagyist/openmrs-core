@@ -28,6 +28,7 @@ import org.openmrs.module.ModuleInteroperabilityTest;
 import org.openmrs.module.ModuleUtil;
 import org.openmrs.test.StartModule;
 import org.openmrs.util.OpenmrsClassLoader;
+import org.openmrs.util.PrivilegeConstants;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.config.BeanDefinition;
@@ -48,7 +49,7 @@ import org.springframework.test.context.support.AbstractTestExecutionListener;
  * 
  * @since 2.4.0
  */
-class StartModuleExecutionListener extends AbstractTestExecutionListener {
+public class StartModuleExecutionListener extends AbstractTestExecutionListener {
 	
 	private static final Logger log = LoggerFactory.getLogger(StartModuleExecutionListener.class);
 	
@@ -78,6 +79,7 @@ class StartModuleExecutionListener extends AbstractTestExecutionListener {
 				if (!Context.isSessionOpen())
 					Context.openSession();
 				
+				
 				ModuleUtil.shutdown();
 				
 				// load the omods that the dev defined for this class
@@ -86,11 +88,15 @@ class StartModuleExecutionListener extends AbstractTestExecutionListener {
 				Properties props = BaseContextSensitiveTest.runtimeProperties;
 				props.setProperty(ModuleConstants.RUNTIMEPROPERTY_MODULE_LIST_TO_LOAD, modulesToLoad);
 				try {
+					Context.addProxyPrivilege(PrivilegeConstants.GET_GLOBAL_PROPERTIES);
 					ModuleUtil.startup(props);
 				}
 				catch (Exception e) {
 					log.error("Error while starting modules: ", e);
 					throw e;
+				}
+				finally {
+					Context.removeProxyPrivilege(PrivilegeConstants.GET_GLOBAL_PROPERTIES);
 				}
 				assertTrue("Some of the modules did not start successfully for "
 					+ testContext.getTestClass().getSimpleName() + ". Only " + ModuleFactory.getStartedModules().size()

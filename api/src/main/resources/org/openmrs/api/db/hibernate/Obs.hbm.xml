@@ -42,7 +42,7 @@
 			column="value_numeric" length="22" />
 		<property name="valueModifier" type="java.lang.String"
 			column="value_modifier" length="2" />
-		<property name="valueText" type="java.lang.String"
+		<property name="valueText" type="text"
 			column="value_text" length="65535" />
 		<property name="valueComplex" type="java.lang.String"
 		    column="value_complex" length="1000" />
@@ -99,6 +99,8 @@
 			<one-to-many class="Obs" />
 		</set> 
 		<many-to-one name="previousVersion" class="Obs" column="previous_version" unique="true" />
+
+		<one-to-one name="referenceRange" class="org.openmrs.ObsReferenceRange" cascade="all"  />
 	</class>
 	
 </hibernate-mapping>

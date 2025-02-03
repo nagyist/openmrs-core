@@ -11,8 +11,10 @@ package org.openmrs.api.context;
 
 import org.aopalliance.aop.Advice;
 import org.apache.commons.lang3.StringUtils;
+import org.hibernate.SessionFactory;
 import org.openmrs.Allergen;
 import org.openmrs.GlobalProperty;
+import org.openmrs.OpenmrsObject;
 import org.openmrs.PersonName;
 import org.openmrs.Privilege;
 import org.openmrs.Role;
@@ -374,19 +376,7 @@ public class Context {
 	public static void becomeUser(String systemId) throws ContextAuthenticationException {
 		log.info("systemId: {}", systemId);
 
-		User user = getUserContext().becomeUser(systemId);
-
-		// if assuming identity procedure finished successfully, we should change context locale parameter
-		Locale locale = null;
-		if (user.getUserProperties().containsKey(OpenmrsConstants.USER_PROPERTY_DEFAULT_LOCALE)) {
-			String localeString = user.getUserProperty(OpenmrsConstants.USER_PROPERTY_DEFAULT_LOCALE);
-			locale = LocaleUtility.fromSpecification(localeString);
-		}
-		// when locale parameter is not valid or does not exist
-		if (locale == null) {
-			locale = LocaleUtility.getDefaultLocale();
-		}
-		Context.setLocale(locale);
+		getUserContext().becomeUser(systemId);
 	}
 
 	/**
@@ -699,7 +689,12 @@ public class Context {
 		if (Daemon.isDaemonThread()) {
 			return true;
 		} else {
-			return getAuthenticatedUser() != null;
+			try {
+				return getAuthenticatedUser() != null;
+			} catch (APIException e) {
+				log.info("Could not get authenticated user inside called to isAuthenticated(), assuming no user context has been defined", e);
+				return false;
+			}
 		}
 	}
 
@@ -897,6 +892,34 @@ public class Context {
 		getContextDAO().evictFromSession(obj);
 	}
 
+	/**
+	 * Evicts the entity data for a particular entity instance.
+	 *
+	 * @param object entity instance to evict from the DB cache
+	 */
+	public static void evictEntity(OpenmrsObject object) {
+		log.debug("Clearing DB cache for entity: {} with id: {}", object.getClass(), object.getId());
+		getContextDAO().evictEntity(object);
+	}
+	
+	/**
+	 * Evicts all entity data of a particular class from the given region.
+	 * 
+	 * @param entityClass entity class to evict from the DB cache
+	 */
+	public static void evictAllEntities(Class<?> entityClass) {
+		log.debug("Clearing DB cache for entities of type: {}", entityClass);
+		getContextDAO().evictAllEntities(entityClass);
+	}
+	
+	/**
+	 * Evicts data from all cache regions.
+	 */
+	public static void clearEntireCache() {
+		log.debug("Clearing DB cache from all regions");
+		getContextDAO().clearEntireCache();
+	}
+	
 	/**
 	 * Starts the OpenMRS System Should be called prior to any kind of activity
 	 *

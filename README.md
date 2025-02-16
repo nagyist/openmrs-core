@@ -7,6 +7,7 @@ test: [![test](https://snyk.io/test/github/openmrs/openmrs-core/badge.svg?target
 tools: [![tools](https://snyk.io/test/github/openmrs/openmrs-core/badge.svg?targetFile=tools%2Fpom.xml)](https://snyk.io/test/github/openmrs/openmrs-core?targetFile=tools%2Fpom.xml)
 web: [![web](https://snyk.io/test/github/openmrs/openmrs-core/badge.svg?targetFile=web%2Fpom.xml)](https://snyk.io/test/github/openmrs/openmrs-core?targetFile=web%2Fpom.xml)
 webapp: [![webapp](https://snyk.io/test/github/openmrs/openmrs-core/badge.svg?targetFile=webapp%2Fpom.xml)](https://snyk.io/test/github/openmrs/openmrs-core?targetFile=webapp%2Fpom.xml)
+DPGA: [![DPG Badge](https://img.shields.io/badge/Verified-DPG-3333AB?logo=data:image/svg%2bxml;base64,PHN2ZyB3aWR0aD0iMzEiIGhlaWdodD0iMzMiIHZpZXdCb3g9IjAgMCAzMSAzMyIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPHBhdGggZD0iTTE0LjIwMDggMjEuMzY3OEwxMC4xNzM2IDE4LjAxMjRMMTEuNTIxOSAxNi40MDAzTDEzLjk5MjggMTguNDU5TDE5LjYyNjkgMTIuMjExMUwyMS4xOTA5IDEzLjYxNkwxNC4yMDA4IDIxLjM2NzhaTTI0LjYyNDEgOS4zNTEyN0wyNC44MDcxIDMuMDcyOTdMMTguODgxIDUuMTg2NjJMMTUuMzMxNCAtMi4zMzA4MmUtMDVMMTEuNzgyMSA1LjE4NjYyTDUuODU2MDEgMy4wNzI5N0w2LjAzOTA2IDkuMzUxMjdMMCAxMS4xMTc3TDMuODQ1MjEgMTYuMDg5NUwwIDIxLjA2MTJMNi4wMzkwNiAyMi44Mjc3TDUuODU2MDEgMjkuMTA2TDExLjc4MjEgMjYuOTkyM0wxNS4zMzE0IDMyLjE3OUwxOC44ODEgMjYuOTkyM0wyNC44MDcxIDI5LjEwNkwyNC42MjQxIDIyLjgyNzdMMzAuNjYzMSAyMS4wNjEyTDI2LjgxNzYgMTYuMDg5NUwzMC42NjMxIDExLjExNzdMMjQuNjI0MSA5LjM1MTI3WiIgZmlsbD0id2hpdGUiLz4KPC9zdmc+Cg==)](https://digitalpublicgoods.net/r/openmrs)
 
 OpenMRS is a patient-based medical record system focusing on giving providers a free customizable electronic medical record system (EMR).
 
@@ -106,7 +107,7 @@ docker-compose build
 ```
 It calls `mvn install` by default. If you would like to customize mvn build arguments you can do so by running:
 ```bash
-docker-compose build --build-args MVN_ARGS='install -DskipTests'
+docker-compose build --build-arg MVN_ARGS='install -DskipTests'
 ```
 It is also possible to use the built dev image to run jetty:
 ```bash
@@ -124,6 +125,28 @@ The production version can be run with:
 ```bash
 docker-compose -f docker-compose.yml up
 ```
+If you want to debug, you need to run a development version and connect your debugger to port 8000, which is exposed by default.
+
+Unfortunately, at this point any code changes require full restart and rebuild of the docker container. To speed up the process,
+please use:
+```bash
+docker-compose build --build-arg MVN_ARGS='install -DskipTests'
+docker-compose up
+```
+We are working towards providing support for Spring Boot auto-reload feature, which will be documented here once ready.
+
+It is also possible to deploy an image built by our CI, which is published at 
+https://hub.docker.com/r/openmrs/openmrs-core
+
+You can run any tag available with:
+```bash
+TAG=nightly docker-compose -f docker-compose.yml up
+```
+It is also possible to run a development version of an image with:
+```bash
+TAG=dev docker-compose up
+```
+All development versions contain dev suffix. The cache suffix is for use by our CI.
 
 ## Navigating the repository
 

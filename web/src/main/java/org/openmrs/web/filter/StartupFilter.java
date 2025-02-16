@@ -16,6 +16,7 @@ import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.lang.reflect.Field;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.Collections;
@@ -55,6 +56,7 @@ import org.openmrs.logging.MemoryAppender;
 import org.openmrs.logging.OpenmrsLoggingUtil;
 import org.openmrs.util.LocaleUtility;
 import org.openmrs.util.OpenmrsUtil;
+import org.openmrs.web.Listener;
 import org.openmrs.web.WebConstants;
 import org.openmrs.web.filter.initialization.InitializationFilter;
 import org.openmrs.web.filter.update.UpdateFilter;
@@ -62,6 +64,7 @@ import org.openmrs.web.filter.util.FilterUtil;
 import org.openmrs.web.filter.util.LocalizationTool;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.http.MediaType;
 
 /**
  * Abstract class used when a small wizard is needed before Spring, jsp, etc has been started up.
@@ -107,7 +110,10 @@ public abstract class StartupFilter implements Filter {
 	@Override
 	public final void doFilter(ServletRequest request, ServletResponse response, FilterChain chain)
 	        throws IOException, ServletException {
-		if (skipFilter((HttpServletRequest) request)) {
+		if (((HttpServletRequest)request).getServletPath().equals("/health/started")) {
+			((HttpServletResponse) response).setStatus(Listener.isOpenmrsStarted() ? HttpServletResponse.SC_OK : HttpServletResponse.SC_SERVICE_UNAVAILABLE);
+		}
+		else if (skipFilter((HttpServletRequest) request)) {
 			chain.doFilter(request, response);
 		} else {
 			
@@ -121,9 +127,10 @@ public abstract class StartupFilter implements Filter {
 			if (servletPath.startsWith("/images") || servletPath.startsWith("/initfilter/scripts")) {
 				// strip out the /initfilter part
 				servletPath = servletPath.replaceFirst("/initfilter", "/WEB-INF/view");
-				// writes the actual image file path to the response
+				// writes the actual file path to the response
 				Path filePath = Paths.get(filterConfig.getServletContext().getRealPath(servletPath)).normalize();
 				Path fullFilePath = filePath;
+				
 				if (httpRequest.getPathInfo() != null) {
 					fullFilePath = fullFilePath.resolve(httpRequest.getPathInfo());
 					if (!(fullFilePath.normalize().startsWith(filePath))) {
@@ -132,8 +139,24 @@ public abstract class StartupFilter implements Filter {
 					}
 				}
 				
-				try (InputStream imageFileInputStream = new FileInputStream(fullFilePath.normalize().toFile())) {
-					OpenmrsUtil.copyFile(imageFileInputStream, httpResponse.getOutputStream());
+				String contentType = httpRequest.getServletContext().getMimeType(fullFilePath.toString());
+				if (contentType == null || contentType.isEmpty()) {
+					try {
+						contentType = Files.probeContentType(fullFilePath);
+					} catch (IOException ignored) {}
+				}
+
+				MediaType mediaType;
+				if (contentType != null && !contentType.isEmpty()) {
+					mediaType = MediaType.parseMediaType(contentType);
+				} else {
+					mediaType = MediaType.APPLICATION_OCTET_STREAM;
+				}
+				
+				response.setContentType(mediaType.toString());
+				
+				try (InputStream fis = new FileInputStream(fullFilePath.normalize().toFile())) {
+					OpenmrsUtil.copyFile(fis, httpResponse.getOutputStream());
 				}
 				catch (FileNotFoundException e) {
 					log.error("Unable to find file: {}", filePath, e);

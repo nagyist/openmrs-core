@@ -11,6 +11,7 @@ package org.openmrs.api.context;
 
 import java.io.Serializable;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
@@ -25,6 +26,7 @@ import org.openmrs.UserSessionListener;
 import org.openmrs.UserSessionListener.Event;
 import org.openmrs.UserSessionListener.Status;
 import org.openmrs.api.APIAuthenticationException;
+import org.openmrs.api.LocationService;
 import org.openmrs.util.LocaleUtility;
 import org.openmrs.util.OpenmrsConstants;
 import org.openmrs.util.RoleConstants;
@@ -57,7 +59,7 @@ public class UserContext implements Serializable {
 	/**
 	 * User's permission proxies
 	 */
-	private List<String> proxies = new ArrayList<>();
+	private List<String> proxies = Collections.synchronizedList(new ArrayList<>());
 	
 	/**
 	 * User's locale
@@ -122,6 +124,7 @@ public class UserContext implements Serializable {
 		}
 		
 		setUserLocation(true);
+		setUserLocale(true);
 		
 		log.debug("Authenticated as: {}", this.user);
 		
@@ -142,6 +145,7 @@ public class UserContext implements Serializable {
 			user = Context.getUserService().getUser(user.getUserId());
 			//update the stored location in the user's session
 			setUserLocation(false);
+			setUserLocale(false);
 		}
 	}
 	
@@ -181,8 +185,9 @@ public class UserContext implements Serializable {
 		
 		this.user = userToBecome;
 		
-		//update the user's location
+		//update the user's location and locale
 		setUserLocation(false);
+		setUserLocale(false);
 		
 		log.debug("Becoming user: {}", user);
 		
@@ -234,6 +239,11 @@ public class UserContext implements Serializable {
 	 * @param privilege to give to users
 	 */
 	public void addProxyPrivilege(String privilege) {
+		
+		if (privilege == null) {
+			throw new IllegalArgumentException("UserContext.addProxyPrivilege does not accept null privileges");
+		}
+		
 		log.debug("Adding proxy privilege: {}", privilege);
 		
 		proxies.add(privilege);
@@ -319,6 +329,14 @@ public class UserContext implements Serializable {
 	 * <strong>Should</strong> not authorize if anonymous user does not have specified privilege
 	 */
 	public boolean hasPrivilege(String privilege) {
+		log.debug("Checking '{}' against proxies: {}", privilege, proxies);
+		// check proxied privileges
+		for (String s : new ArrayList<>(proxies)) {
+			if (s.equals(privilege)) {
+				notifyPrivilegeListeners(getAuthenticatedUser(), privilege, true);
+				return true;
+			}
+		}
 		
 		// if a user has logged in, check their privileges
 		if (isAuthenticated()
@@ -328,16 +346,6 @@ public class UserContext implements Serializable {
 			notifyPrivilegeListeners(getAuthenticatedUser(), privilege, true);
 			return true;
 			
-		}
-		
-		log.debug("Checking '{}' against proxies: {}", privilege, proxies);
-		
-		// check proxied privileges
-		for (String s : proxies) {
-			if (s.equals(privilege)) {
-				notifyPrivilegeListeners(getAuthenticatedUser(), privilege, true);
-				return true;
-			}
 		}
 		
 		if (getAnonymousRole().hasPrivilege(privilege)) {
@@ -440,35 +448,59 @@ public class UserContext implements Serializable {
 		}
 		
 		// intended to be when the user initially authenticates
-		if (this.locationId == null || useDefault) {
-			Integer defaultLocationId = getDefaultLocationId(this.user);
-			
-			if (useDefault || defaultLocationId != null) {
-				this.locationId = defaultLocationId;
-			}
+		if (this.locationId == null && useDefault) {
+			this.locationId = getDefaultLocationId(this.user);
 		}
 	}
+
+	/**
+	 * Convenience method that sets the default locale used by the currently authenticated user, using
+	 * the value of the user's default local property
+	 */
+	private void setUserLocale(boolean useDefault) {
+		// local should be null if no user is logged in
+		if (this.user == null) {
+			this.locale = null;
+			return;
+		}
+
+		// intended to be when the user initially authenticates
+		if (user.getUserProperties().containsKey("defaultLocale")) {
+			String localeString = user.getUserProperty("defaultLocale");
+			locale = LocaleUtility.fromSpecification(localeString);
+		}
+
+		if (locale == null && useDefault) {
+			locale = LocaleUtility.getDefaultLocale();
+		}
+
+	}
 	
-	private Integer getDefaultLocationId(User user) {
-		String locationId = user.getUserProperty(OpenmrsConstants.USER_PROPERTY_DEFAULT_LOCATION);
-		if (StringUtils.isNotBlank(locationId)) {
+	protected Integer getDefaultLocationId(User user) {
+		String defaultLocation = user.getUserProperty(OpenmrsConstants.USER_PROPERTY_DEFAULT_LOCATION);
+		if (StringUtils.isNotBlank(defaultLocation)) {
+			LocationService ls = Context.getLocationService();
 			//only go ahead if it has actually changed OR if wasn't set before
 			try {
-				int defaultId = Integer.parseInt(locationId);
+				int defaultId = Integer.parseInt(defaultLocation);
 				if (this.locationId == null || this.locationId != defaultId) {
 					// validate that the id is a valid id
-					if (Context.getLocationService().getLocation(defaultId) != null) {
+					if (ls.getLocation(defaultId) != null) {
 						return defaultId;
-					} else {
-						log.warn("The default location for user '{}' is set to '{}', which is not a valid location",
-							user.getUserId(), locationId);
 					}
 				}
 			}
-			catch (NumberFormatException e) {
-				log.warn("The value of the default Location property of the user with id: {} should be an integer",
-					user.getUserId(), e);
+			catch (NumberFormatException ignored) {
 			}
+
+			Location possibleLocation = ls.getLocationByUuid(defaultLocation);
+
+			if (possibleLocation != null && (this.locationId == null || !this.locationId.equals(possibleLocation.getId()))) {
+				return possibleLocation.getId();
+			}
+
+			log.warn("The default location for user '{}' is set to '{}', which is not a valid location",
+				user.getUsername(), defaultLocation);
 		}
 		
 		return null;

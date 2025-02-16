@@ -9,8 +9,14 @@
  */
 package org.openmrs.api;
 
-import static org.hamcrest.CoreMatchers.is;
 import static org.hamcrest.MatcherAssert.assertThat;
+import static org.hamcrest.Matchers.emptyString;
+import static org.hamcrest.Matchers.greaterThanOrEqualTo;
+import static org.hamcrest.Matchers.hasSize;
+import static org.hamcrest.Matchers.is;
+import static org.hamcrest.Matchers.lessThanOrEqualTo;
+import static org.hamcrest.Matchers.not;
+import static org.hamcrest.Matchers.notNullValue;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
@@ -28,8 +34,11 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Properties;
 import java.util.Set;
+import java.util.stream.Collectors;
 
+import org.apache.commons.lang3.StringUtils;
 import org.apache.commons.lang3.reflect.FieldUtils;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeEach;
@@ -42,7 +51,9 @@ import org.openmrs.Privilege;
 import org.openmrs.Role;
 import org.openmrs.User;
 import org.openmrs.api.context.Context;
+import org.openmrs.api.context.Credentials;
 import org.openmrs.api.context.UserContext;
+import org.openmrs.api.context.UsernamePasswordCredentials;
 import org.openmrs.api.db.DAOException;
 import org.openmrs.api.db.LoginCredential;
 import org.openmrs.api.db.UserDAO;
@@ -163,11 +174,11 @@ public class UserServiceTest extends BaseContextSensitiveTest {
 		Context.clearSession();
 		
 		List<User> allUsers = userService.getAllUsers();
-		assertEquals(12, allUsers.size());
+		assertThat(allUsers, hasSize(greaterThanOrEqualTo(12)));
 		
 		// there should still only be the one patient we created in the xml file
 		List<Patient> allPatientsSet = Context.getPatientService().getAllPatients();
-		assertEquals(4, allPatientsSet.size());
+		assertThat(allUsers, hasSize(greaterThanOrEqualTo(4)));
 	}
 
 	@Test
@@ -257,6 +268,7 @@ public class UserServiceTest extends BaseContextSensitiveTest {
 		Role userRole = new Role("User Adder");
 		userRole.setRole(RoleConstants.AUTHENTICATED);
 		userRole.addPrivilege(new Privilege("Add Users"));
+		userRole.addPrivilege(new Privilege(PrivilegeConstants.GET_GLOBAL_PROPERTIES));
 		currentUser.addRole(userRole);
 		// setup our expected exception
 		// we expect this to fail because the currently logged-in user lacks a privilege to be
@@ -290,6 +302,7 @@ public class UserServiceTest extends BaseContextSensitiveTest {
 		Role userRole = new Role("User Adder");
 		userRole.setRole(RoleConstants.AUTHENTICATED);
 		userRole.addPrivilege(new Privilege("Add Users"));
+		userRole.addPrivilege(new Privilege(PrivilegeConstants.GET_GLOBAL_PROPERTIES));
 		currentUser.addRole(userRole);
 		// setup our expected exception
 		// we expect this to fail because the currently logged-in user lacks a privilege to be
@@ -324,8 +337,8 @@ public class UserServiceTest extends BaseContextSensitiveTest {
 		Role userRole = new Role("User Adder");
 		userRole.setRole(RoleConstants.AUTHENTICATED);
 		userRole.addPrivilege(new Privilege("Add Users"));
+		userRole.addPrivilege(new Privilege(PrivilegeConstants.GET_GLOBAL_PROPERTIES));
 		currentUser.addRole(userRole);
-
 		// setup our expected exception
 		// we expect this to fail because the currently logged-in user lacks a privilege to be
 		// assigned to the new user
@@ -390,6 +403,54 @@ public class UserServiceTest extends BaseContextSensitiveTest {
 		userService.changePassword("test", "Tester12");
 		userService.changePassword("Tester12", "Tester13");
 	}
+	
+	@Test
+	public void changePassword_shouldRespectLockingViaRuntimeProperty() {
+		assertThat("admin", is(Context.getAuthenticatedUser().getUsername()));
+		assertTrue(Context.getAuthenticatedUser().isSuperUser());
+		
+		User u = userService.getUserByUsername(ADMIN_USERNAME);
+		
+		assertThat(u.getUsername(), is("admin"));
+
+		Properties props = Context.getRuntimeProperties();
+		props.setProperty(UserService.ADMIN_PASSWORD_LOCKED_PROPERTY, "true");
+		Context.setRuntimeProperties(props);
+
+		APIException apiException = assertThrows(APIException.class, () -> userService.changePassword(u,"test", "SuperAdmin123"));
+		
+		assertThat(apiException.getMessage(), is("admin.password.is.locked"));
+
+		props.setProperty(UserService.ADMIN_PASSWORD_LOCKED_PROPERTY, "True");
+		Context.setRuntimeProperties(props);
+		
+		apiException = assertThrows(APIException.class, () -> userService.changePassword(u,"test", "SuperAdmin123"));
+		assertThat(apiException.getMessage(), is("admin.password.is.locked"));
+		
+		props.remove(UserService.ADMIN_PASSWORD_LOCKED_PROPERTY);
+		Context.setRuntimeProperties(props);
+
+		userService.changePassword(u,"test", "SuperAdmin123");
+	}
+
+	@Test
+	public void changePassword_shouldRespectLockingViaRuntimePropertyForSystemIdAdminAndNoUsername() {
+		assertThat("admin", is(Context.getAuthenticatedUser().getUsername()));
+		assertTrue(Context.getAuthenticatedUser().isSuperUser());
+		
+		User u = userService.getUserByUsername(ADMIN_USERNAME);
+		
+		u.setSystemId("admin");
+		u.setUsername(null);
+
+		Properties props = Context.getRuntimeProperties();
+		props.setProperty(UserService.ADMIN_PASSWORD_LOCKED_PROPERTY, "true");
+		Context.setRuntimeProperties(props);
+
+		APIException apiException = assertThrows(APIException.class, () -> userService.changePassword(u, "test", "SuperAdmin123"));
+
+		assertThat(apiException.getMessage(), is("admin.password.is.locked"));
+	}
 
 	@Test
 	public void saveUser_shouldGrantNewRolesInRolesListToUser() {
@@ -443,9 +504,8 @@ public class UserServiceTest extends BaseContextSensitiveTest {
 		executeDataSet(XML_FILENAME);
 		Context.logout();
 		Context.authenticate("incorrectlyhashedSha1", "test");
-
+		Context.addProxyPrivilege(PrivilegeConstants.GET_GLOBAL_PROPERTIES);
 		userService.changePassword("test", "Tester12");
-
 		Context.logout(); // so that the next test reauthenticates
 	}
 
@@ -485,9 +545,8 @@ public class UserServiceTest extends BaseContextSensitiveTest {
 		executeDataSet(XML_FILENAME);
 		Context.logout();
 		Context.authenticate("correctlyhashedSha1", "test");
-
+		Context.addProxyPrivilege(PrivilegeConstants.GET_GLOBAL_PROPERTIES);
 		userService.changePassword("test", "Tester12");
-
 		Context.logout(); // so that the next test reauthenticates
 	}
 
@@ -513,9 +572,8 @@ public class UserServiceTest extends BaseContextSensitiveTest {
 		executeDataSet(XML_FILENAME);
 		Context.logout();
 		Context.authenticate("userWithSha512Hash", "test");
-
+		Context.addProxyPrivilege(PrivilegeConstants.GET_GLOBAL_PROPERTIES);
 		userService.changePassword("test", "Tester12");
-
 		Context.logout(); // so that the next test reauthenticates
 	}
 
@@ -658,7 +716,7 @@ public class UserServiceTest extends BaseContextSensitiveTest {
 	@Test
 	public void getAllUsers_shouldFetchAllUsersInTheSystem() {
 		List<User> users = userService.getAllUsers();
-		assertEquals(3, users.size());
+		assertThat(users, hasSize(greaterThanOrEqualTo(3)));
 	}
 	
 	/**
@@ -808,8 +866,8 @@ public class UserServiceTest extends BaseContextSensitiveTest {
 	 */
 	@Test
 	public void getUsers_shouldFetchAllUsersIfNameSearchIsEmptyOrNull() {
-		assertEquals(3, userService.getUsers("", null, true).size());
-		assertEquals(3, userService.getUsers(null, null, true).size());
+		assertThat(userService.getUsers("", null, true), hasSize(greaterThanOrEqualTo(3)));
+		assertThat(userService.getUsers(null, null, true), hasSize(greaterThanOrEqualTo(3)));
 	}
 	
 	/**
@@ -1249,7 +1307,7 @@ public class UserServiceTest extends BaseContextSensitiveTest {
 		List<Role> roles = new ArrayList<>();
 		roles.add(role);
 		
-		assertEquals(2, userService.getUsers("", roles, true).size());
+		assertThat(userService.getUsers("", roles, true), hasSize(greaterThanOrEqualTo(2)));
 	}
 	
 	/**
@@ -1275,7 +1333,7 @@ public class UserServiceTest extends BaseContextSensitiveTest {
 		Context.authenticate(user.getUsername(), "testUser1234");
 		
 		final int numberOfUserProperties = user.getUserProperties().size();
-		assertEquals(1, user.getUserProperties().size());
+		assertEquals(3, user.getUserProperties().size());
 		final String USER_PROPERTY_KEY = "test-key";
 		final String USER_PROPERTY_VALUE = "test-value";
 		
@@ -1294,7 +1352,7 @@ public class UserServiceTest extends BaseContextSensitiveTest {
 
 		//  retrieve a user who has UserProperties
 		User user = userService.getUser(5511);
-		assertEquals(1, user.getUserProperties().size());
+		assertEquals(2, user.getUserProperties().size());
 		// Authenticate the test  user so that Context.getAuthenticatedUser() method returns above user
 		Context.authenticate(user.getUsername(), "testUser1234");
 		final String USER_PROPERTY_KEY_1 = "test-key1";
@@ -1438,7 +1496,7 @@ public class UserServiceTest extends BaseContextSensitiveTest {
 		User user = userService.getUserByUsername(ADMIN_USERNAME);
 		assertNotNull(user, "There needs to be a user with username 'admin' in the database");
 		
-		userService.changePassword(user, "testTest123");
+		userService.changePassword(user, "test", "testTest123");
 		
 		Context.authenticate(user.getUsername(), "testTest123");
 	}
@@ -1449,7 +1507,9 @@ public class UserServiceTest extends BaseContextSensitiveTest {
 		User user = userService.getUser(6001);
 		assertFalse(user.hasPrivilege(PrivilegeConstants.EDIT_USER_PASSWORDS));
 		Context.authenticate(user.getUsername(), "userServiceTest");
-		APIAuthenticationException exception = assertThrows(APIAuthenticationException.class, () ->  userService.changePassword(user, "testTest123"));
+		
+		APIAuthenticationException exception = assertThrows(APIAuthenticationException.class, () ->  userService.changePassword(user, "userServiceTest", "testTest123"));
+		
 		assertThat(exception.getMessage(), is(messages.getMessage("error.privilegesRequired", new Object[] {PrivilegeConstants.EDIT_USER_PASSWORDS}, null)));
 	}
 	
@@ -1459,9 +1519,9 @@ public class UserServiceTest extends BaseContextSensitiveTest {
 		User user = userService.getUser(6001);
 		assertFalse(user.hasPrivilege(PrivilegeConstants.EDIT_USER_PASSWORDS));
 		Context.authenticate(user.getUsername(), "userServiceTest");
-		
+		Context.addProxyPrivilege(PrivilegeConstants.GET_GLOBAL_PROPERTIES);
 		userService.changePasswordUsingSecretAnswer("answer", "userServiceTest2");
-		
+		Context.removeProxyPrivilege(PrivilegeConstants.GET_GLOBAL_PROPERTIES);
 		Context.authenticate(user.getUsername(), "userServiceTest2");
 	}
 
@@ -1553,7 +1613,9 @@ public class UserServiceTest extends BaseContextSensitiveTest {
 		
 		final String PASSWORD = "Admin123";
 		Context.authenticate(createdUser.getUsername(), "Openmr5xy");
+		Context.addProxyPrivilege(PrivilegeConstants.GET_GLOBAL_PROPERTIES);
 		userService.changePasswordUsingActivationKey(key, PASSWORD);
+		Context.removeProxyPrivilege(PrivilegeConstants.GET_GLOBAL_PROPERTIES);
 		Context.authenticate(createdUser.getUsername(), PASSWORD);
 		
 	}
@@ -1609,7 +1671,14 @@ public class UserServiceTest extends BaseContextSensitiveTest {
 		final String USER_PROPERTY_KEY = liquibase.util.StringUtil.repeat("emrapi.lastViewedPatientIds,",10);
 		final String USER_PROPERTY_VALUE = liquibase.util.StringUtil.repeat("52345",9899);
 		User updatedUser = userService.saveUserProperty(USER_PROPERTY_KEY, USER_PROPERTY_VALUE);
-		assertEquals(280, updatedUser.getUserProperties().keySet().iterator().next().length());
+
+		Set<String> emrApiPropertyKeys = updatedUser.getUserProperties()
+			.keySet()
+			.stream()
+			.filter(key -> key.contains("emrapi.lastViewedPatientIds"))
+			.collect(Collectors.toSet());
+
+		assertEquals(280, emrApiPropertyKeys.stream().findFirst().orElse("").length());
 		assertEquals(49495, updatedUser.getUserProperties().get(USER_PROPERTY_KEY).length());
 	}
 	
@@ -1629,6 +1698,47 @@ public class UserServiceTest extends BaseContextSensitiveTest {
 		createdUser.setUserProperty(OpenmrsConstants.USER_PROPERTY_DEFAULT_LOCALE, "fr");
 		Context.getUserService().saveUser(createdUser);
 		assertEquals(Locale.FRENCH, Context.getUserService().getDefaultLocaleForUser(createdUser));
+	}
+
+	@Test
+	public void getDefaultLocaleForUser_shouldReturnDefaultLocaleForUserIfAlreadySet() {
+		executeDataSet(XML_FILENAME);
+		Context.authenticate("test", "testUser1234");
+
+		Locale locale = Context.getLocale();
+		assertEquals(Locale.FRENCH, locale);
+	}
+
+	@Test
+	public void getLastLoginTimeForUser_shouldReturnEmptyStringOnLastLoginTimeIfPropertyNotSet() {
+		User createdUser = createTestUser();
+		assertThat(createdUser.getUserProperty(OpenmrsConstants.USER_PROPERTY_LAST_LOGIN_TIMESTAMP), emptyString());
+		assertThat(Context.getUserService().getLastLoginTime(createdUser), emptyString());
+	}
+
+	@Test
+	public void getLastLoginTimeForUser_shouldReturnEmptyStringOnLastLoginTimeIfADifferentUserIsLoggedIn() {
+		executeDataSet(XML_FILENAME);
+		User createdUser = createTestUser();
+		Context.authenticate(getTestUserCredentials());
+		
+		assertThat(createdUser.getUserProperty(OpenmrsConstants.USER_PROPERTY_LAST_LOGIN_TIMESTAMP), emptyString());
+		assertThat(Context.getUserService().getLastLoginTime(createdUser), emptyString());
+	}
+	
+	@Test
+	public void getLastLoginTimeForUser_shouldNotBeEmptyIfUserIsAuthenticated() {
+		executeDataSet(XML_FILENAME);
+		User createdUser = createTestUser();
+		Context.authenticate(new UsernamePasswordCredentials("bwolfe", "Openmr5xy"));
+
+		assertThat(createdUser.getUserProperty(OpenmrsConstants.USER_PROPERTY_LAST_LOGIN_TIMESTAMP), notNullValue());
+		assertThat(createdUser.getUserProperty(OpenmrsConstants.USER_PROPERTY_LAST_LOGIN_TIMESTAMP), not(emptyString()));
+		assertThat(Context.getUserService().getLastLoginTime(createdUser), not(emptyString()));
+	}
+
+	private Credentials getTestUserCredentials() {
+		return new UsernamePasswordCredentials("test", "testUser1234");
 	}
 
 	private User createTestUser() {

@@ -29,6 +29,7 @@ import org.openmrs.ConceptName;
 import org.openmrs.ConceptNameTag;
 import org.openmrs.ConceptNumeric;
 import org.openmrs.ConceptProposal;
+import org.openmrs.ConceptReferenceRange;
 import org.openmrs.ConceptReferenceTerm;
 import org.openmrs.ConceptReferenceTermMap;
 import org.openmrs.ConceptSearchResult;
@@ -789,6 +790,7 @@ public interface ConceptService extends OpenmrsService {
 	 * 
 	 * @throws ConceptsLockedException
 	 */
+	@Authorized(PrivilegeConstants.GET_CONCEPTS)
 	public void checkIfLocked() throws ConceptsLockedException;
 	
 	/**
@@ -856,6 +858,7 @@ public interface ConceptService extends OpenmrsService {
 	 * @return set of used Locales
 	 * <strong>Should</strong> return a list of matching locales
 	 */
+	@Authorized(PrivilegeConstants.GET_CONCEPTS)
 	public Set<Locale> getLocalesOfConceptNames();
 	
 	/**
@@ -936,6 +939,7 @@ public interface ConceptService extends OpenmrsService {
 	 * @return highest concept-id
 	 * <strong>Should</strong> give the maximum concept-id
 	 */
+	@Authorized(PrivilegeConstants.GET_CONCEPTS)
 	public Integer getMaxConceptId();
 	
 	/**
@@ -1066,6 +1070,7 @@ public interface ConceptService extends OpenmrsService {
 	 * @return a list of the concept name tags stored in the dataset
 	 * <strong>Should</strong> return a list of all concept name tags
 	 */
+	@Authorized(PrivilegeConstants.GET_CONCEPTS)
 	public List<ConceptNameTag> getAllConceptNameTags();
 	
 	/**
@@ -1145,6 +1150,7 @@ public interface ConceptService extends OpenmrsService {
 	 * @return true concept
 	 * <strong>Should</strong> return the true concept
 	 */
+	@Authorized(PrivilegeConstants.GET_CONCEPTS)
 	public Concept getTrueConcept();
 	
 	/**
@@ -1153,6 +1159,7 @@ public interface ConceptService extends OpenmrsService {
 	 * @return false concept
 	 * <strong>Should</strong> return the false concept
 	 */
+	@Authorized(PrivilegeConstants.GET_CONCEPTS)
 	public Concept getFalseConcept();
 	
 	/**
@@ -1161,6 +1168,7 @@ public interface ConceptService extends OpenmrsService {
 	 * @return unknown concept
 	 * <strong>Should</strong> return the unknown concept
 	 */
+	@Authorized(PrivilegeConstants.GET_CONCEPTS)
 	public Concept getUnknownConcept();
 	
 	/**
@@ -1341,6 +1349,7 @@ public interface ConceptService extends OpenmrsService {
 	 * <strong>Should</strong> return default Locale <code>ConceptStopWord</code> if Locale is null
 	 * @since 1.8
 	 */
+	@Authorized(PrivilegeConstants.GET_CONCEPTS)
 	public List<String> getConceptStopWords(Locale locale);
 	
 	/**
@@ -1383,6 +1392,7 @@ public interface ConceptService extends OpenmrsService {
 	 * <strong>Should</strong> return empty list if nothing found
 	 * @since 1.8
 	 */
+	@Authorized(PrivilegeConstants.GET_CONCEPTS)
 	public List<ConceptStopWord> getAllConceptStopWords();
 	
 	/**
@@ -1395,6 +1405,7 @@ public interface ConceptService extends OpenmrsService {
 	 * <strong>Should</strong> raise exception if no concept is given
 	 * @since 1.10
 	 */
+	@Authorized(PrivilegeConstants.GET_CONCEPTS)
 	public List<Drug> getDrugsByIngredient(Concept ingredient);
 	
 	/**
@@ -1596,7 +1607,22 @@ public interface ConceptService extends OpenmrsService {
 	 */
 	@Authorized(PrivilegeConstants.GET_CONCEPT_REFERENCE_TERMS)
 	public ConceptReferenceTerm getConceptReferenceTermByCode(String code, ConceptSource conceptSource) throws APIException;
-	
+
+	/**
+	 * Gets a list of concept reference terms with the specified code from the specified concept source
+	 *
+	 * @param code the code to match against
+	 * @param conceptSource the concept source to match against
+	 * @param includeRetired specifies if retired concept reference terms should be included
+	 * @return concept reference term object
+	 * @since 2.7
+	 * @throws APIException
+	 * <strong>Should</strong> return a list of concept reference terms that matches the given code from the given source
+	 */
+	@Authorized(PrivilegeConstants.GET_CONCEPT_REFERENCE_TERMS)
+	public List<ConceptReferenceTerm> getConceptReferenceTermByCode(String code, ConceptSource conceptSource, boolean includeRetired) throws APIException;
+
+
 	/**
 	 * Stores the specified concept reference term to the database
 	 * 
@@ -1747,6 +1773,7 @@ public interface ConceptService extends OpenmrsService {
 	 * @return true if it is a duplicate name
 	 * @since 1.11
 	 */
+	@Authorized(PrivilegeConstants.GET_CONCEPTS)
 	public boolean isConceptNameDuplicate(ConceptName name);
 	
 	/**
@@ -1835,6 +1862,7 @@ public interface ConceptService extends OpenmrsService {
 	 * <strong>Should</strong> get orderable concepts
 	 * <strong>Should</strong> return an empty list if no concept search result is found
 	 */
+	@Authorized(PrivilegeConstants.GET_CONCEPTS)
 	public List<ConceptSearchResult> getOrderableConcepts(String phrase, List<Locale> locales, boolean includeRetired,
 	        Integer start, Integer length);
 			
@@ -1955,5 +1983,47 @@ public interface ConceptService extends OpenmrsService {
 	 */
 	@Authorized(PrivilegeConstants.GET_CONCEPTS)
 	boolean hasAnyConceptAttribute(ConceptAttributeType conceptAttributeType);
+
+	/**
+	 * Creates or updates the given {@link ConceptReferenceRange} in the database
+	 *
+	 * @param conceptReferenceRange ConceptReferenceRange to save
+	 * @return the created ConceptReferenceRange
+	 * 
+	 * @since 2.7.0
+	 * 
+	 * <strong>Should</strong> create a new concept reference range
+	 * <strong>Should</strong> edit an existing concept reference range
+	 */
+	@Authorized(PrivilegeConstants.MANAGE_CONCEPTS)
+	ConceptReferenceRange saveConceptReferenceRange(ConceptReferenceRange conceptReferenceRange);
+
+	/**
+	 * This method gets ConceptReferenceRange by concept id
+	 * 
+	 * @param conceptId conceptId 
+	 * @return list of {@link ConceptReferenceRange}
+	 *
+	 * @since 2.7.0
+	 *
+	 * <strong>Should</strong> get a list of conceptReferenceRanges with the given conceptId
+	 * <strong>Should</strong> return empty list if none of conceptReferenceRanges has the given conceptId
+	 */
+	@Authorized(PrivilegeConstants.GET_CONCEPTS)
+	List<ConceptReferenceRange> getConceptReferenceRangesByConceptId(Integer conceptId);
+
+	/**
+	 * This method gets ConceptReferenceRange by uuid
+	 *
+	 * @param uuid uuid 
+	 * @return {@link ConceptReferenceRange}
+	 *
+	 * @since 2.7.0
+	 *
+	 * <strong>Should</strong> get a conceptReferenceRange if found
+	 * <strong>Should</strong> return null if no conceptReferenceRange was found with the given uuid
+	 */
+	@Authorized(PrivilegeConstants.GET_CONCEPTS)
+	ConceptReferenceRange getConceptReferenceRangeByUuid(String uuid);
 	
 }

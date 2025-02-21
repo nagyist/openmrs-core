@@ -13,7 +13,6 @@ import org.apache.commons.lang3.StringUtils;
 import org.hibernate.CacheMode;
 import org.hibernate.FlushMode;
 import org.hibernate.HibernateException;
-import org.hibernate.ScrollMode;
 import org.hibernate.ScrollableResults;
 import org.hibernate.Session;
 import org.hibernate.SessionFactory;
@@ -22,6 +21,7 @@ import org.hibernate.stat.QueryStatistics;
 import org.hibernate.stat.Statistics;
 import org.hibernate.type.StandardBasicTypes;
 import org.openmrs.GlobalProperty;
+import org.openmrs.OpenmrsObject;
 import org.openmrs.User;
 import org.openmrs.api.context.Context;
 import org.openmrs.api.context.ContextAuthenticationException;
@@ -49,6 +49,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Properties;
 import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 
 /**
  * Hibernate specific implementation of the {@link ContextDAO}. These methods should not be used
@@ -60,6 +61,8 @@ import java.util.concurrent.Future;
 public class HibernateContextDAO implements ContextDAO {
 	
 	private static final Logger log = LoggerFactory.getLogger(HibernateContextDAO.class);
+	
+	private static final Long DEFAULT_UNLOCK_ACCOUNT_WAITING_TIME = TimeUnit.MILLISECONDS.convert(5L, TimeUnit.MINUTES);
 	
 	/**
 	 * Hibernate session factory
@@ -137,10 +140,11 @@ public class HibernateContextDAO implements ContextDAO {
 
 			// if they've been locked out, don't continue with the authentication
 			if (lockoutTime > 0) {
-				// unlock them after 5 mins, otherwise reset the timestamp
-				// to now and make them wait another 5 mins
-				if (System.currentTimeMillis() - lockoutTime > 300000) {
-					candidateUser.setUserProperty(OpenmrsConstants.USER_PROPERTY_LOGIN_ATTEMPTS, "0");
+				// unlock them after x mins, otherwise reset the timestamp
+				// to now and make them wait another x mins
+				final Long unlockTime = getUnlockTimeMs();
+				if (System.currentTimeMillis() - lockoutTime > unlockTime) {
+					candidateUser.setUserProperty(OpenmrsConstants.USER_PROPERTY_LOGIN_ATTEMPTS, OpenmrsConstants.ZERO_LOGIN_ATTEMPTS_VALUE);
 					candidateUser.removeUserProperty(OpenmrsConstants.USER_PROPERTY_LOCKOUT_TIMESTAMP);
 					saveUserProperties(candidateUser);
 				} else {
@@ -169,10 +173,11 @@ public class HibernateContextDAO implements ContextDAO {
 				// only clean up if the were some login failures, otherwise all should be clean
 				int attempts = getUsersLoginAttempts(candidateUser);
 				if (attempts > 0) {
-					candidateUser.setUserProperty(OpenmrsConstants.USER_PROPERTY_LOGIN_ATTEMPTS, "0");
+					candidateUser.setUserProperty(OpenmrsConstants.USER_PROPERTY_LOGIN_ATTEMPTS, OpenmrsConstants.ZERO_LOGIN_ATTEMPTS_VALUE);
 					candidateUser.removeUserProperty(OpenmrsConstants.USER_PROPERTY_LOCKOUT_TIMESTAMP);
-					saveUserProperties(candidateUser);
 				}
+				setLastLoginTime(candidateUser);
+				saveUserProperties(candidateUser);
 
 				// skip out of the method early (instead of throwing the exception)
 				// to indicate that this is the valid user
@@ -212,6 +217,35 @@ public class HibernateContextDAO implements ContextDAO {
 		throw new ContextAuthenticationException(errorMsg);
 	}
 	
+	private void setLastLoginTime(User candidateUser) {
+		candidateUser.setUserProperty(
+			OpenmrsConstants.USER_PROPERTY_LAST_LOGIN_TIMESTAMP,
+			String.valueOf(System.currentTimeMillis())
+		);
+	}
+	
+	private Long getUnlockTimeMs() {
+		String unlockTimeGPValue = Context.getAdministrationService().getGlobalProperty(
+				OpenmrsConstants.GP_UNLOCK_ACCOUNT_WAITING_TIME);
+		if (StringUtils.isNotBlank(unlockTimeGPValue)) {
+			return convertUnlockAccountWaitingTimeGP(unlockTimeGPValue);
+		}
+		else {
+			return DEFAULT_UNLOCK_ACCOUNT_WAITING_TIME;
+		}
+	}
+	
+	private Long convertUnlockAccountWaitingTimeGP(String waitingTime) {
+		try {
+			return TimeUnit.MILLISECONDS.convert(Long.valueOf(waitingTime), TimeUnit.MINUTES);
+		} catch (Exception ex) {
+			log.error("Unable to convert the global property "
+					+ OpenmrsConstants.GP_UNLOCK_ACCOUNT_WAITING_TIME
+					+ "to a valid Long. Using default value of 5");
+			return DEFAULT_UNLOCK_ACCOUNT_WAITING_TIME;
+		}
+	}
+	
 	/**
 	 * @see org.openmrs.api.db.ContextDAO#getUserByUuid(java.lang.String)
 	 */
@@ -223,8 +257,7 @@ public class HibernateContextDAO implements ContextDAO {
 		FlushMode flushMode = sessionFactory.getCurrentSession().getHibernateFlushMode();
 		sessionFactory.getCurrentSession().setHibernateFlushMode(FlushMode.MANUAL);
 		
-		User u = (User) sessionFactory.getCurrentSession().createQuery("from User u where u.uuid = :uuid").setString("uuid",
-		    uuid).uniqueResult();
+		User u = HibernateUtil.getUniqueEntityByUUID(sessionFactory, User.class, uuid);
 		
 		// reset the flush mode to whatever it was before
 		sessionFactory.getCurrentSession().setHibernateFlushMode(flushMode);
@@ -338,6 +371,32 @@ public class HibernateContextDAO implements ContextDAO {
 	@Override
 	public void evictFromSession(Object obj) {
 		sessionFactory.getCurrentSession().evict(obj);
+	}
+
+	/**
+	 * @see org.openmrs.api.db.ContextDAO#evictEntity(OpenmrsObject)
+	 */
+	@Override
+	public void evictEntity(OpenmrsObject obj) {
+		sessionFactory.getCache().evictEntity(obj.getClass(), obj.getId());
+	}
+
+	/**
+	 * @see org.openmrs.api.db.ContextDAO#evictAllEntities(Class)
+	 */
+	@Override
+	public void evictAllEntities(Class<?> entityClass) {
+		sessionFactory.getCache().evictEntityRegion(entityClass);
+		sessionFactory.getCache().evictCollectionRegions();
+		sessionFactory.getCache().evictQueryRegions();
+	}
+
+	/**
+	 * @see org.openmrs.api.db.ContextDAO#clearEntireCache()
+	 */
+	@Override
+	public void clearEntireCache() {
+		sessionFactory.getCache().evictAllRegions();
 	}
 	
 	/**
@@ -469,7 +528,7 @@ public class HibernateContextDAO implements ContextDAO {
 			session.setCacheMode(CacheMode.IGNORE);
 			
 			//Scrollable results will avoid loading too many objects in memory
-			try (ScrollableResults results = session.createCriteria(type).setFetchSize(1000).scroll(ScrollMode.FORWARD_ONLY)) {
+			try (ScrollableResults results = HibernateUtil.getScrollableResult(sessionFactory, type, 1000)) {
 				int index = 0;
 				while (results.next()) {
 					index++;

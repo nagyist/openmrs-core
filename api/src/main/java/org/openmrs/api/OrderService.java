@@ -12,6 +12,7 @@ package org.openmrs.api;
 import org.openmrs.OrderAttribute;
 import org.openmrs.OrderAttributeType;
 import org.openmrs.Provider;
+import org.openmrs.Visit;
 import org.openmrs.OrderGroup;
 import org.openmrs.OrderGroupAttribute;
 import org.openmrs.OrderGroupAttributeType;
@@ -835,6 +836,19 @@ public interface OrderService extends OpenmrsService {
 	public OrderGroup saveOrderGroup(OrderGroup orderGroup) throws APIException;
 
 	/**
+	 * Saves an order group with a specific order context
+	 *
+	 * @param orderGroup the order group to be saved
+	 * @param orderContext the order context data transfer object containing care setting and 
+	 * the order type to save with the order group
+	 * @return the order group that was saved with the specified order context data
+	 * @since 2.7.0
+	 * @throws APIException
+	 */
+	@Authorized({ PrivilegeConstants.EDIT_ORDERS, PrivilegeConstants.ADD_ORDERS })
+	public  OrderGroup saveOrderGroup(OrderGroup orderGroup, OrderContext orderContext) throws APIException;
+
+	/**
 	 * Fetches all order groups for the specified patient
 	 * 
 	 * @param patient the patient to match on
@@ -1051,4 +1065,36 @@ public interface OrderService extends OpenmrsService {
 	 */
 	@Authorized(PrivilegeConstants.GET_ORDERS)
 	OrderAttribute getOrderAttributeByUuid(String uuid) throws APIException;
+
+	/**
+	 * @see org.openmrs.api.OrderService#getActiveOrders(org.openmrs.Patient, org.openmrs.OrderType,
+	 *      org.openmrs.CareSetting, java.util.Date)
+	 *      
+	 * This method works exactly the same; it only adds visit to the search criteria.
+	 * It effectively surpasses the above method; the old one is however kept for backward
+	 * compatibility reasons.
+	 * 
+	 * @param visit the {@link Visit} to restrict active orders (optional)
+	 *      
+	 * @since 2.7.0
+	 */
+	@Authorized(PrivilegeConstants.GET_ORDERS)
+	public List<Order> getActiveOrders(Patient patient, Visit visit, OrderType orderType, CareSetting careSetting,
+			Date asOfDate);
+
+	/**
+	 * @see OrderService#getOrders(org.openmrs.Patient, org.openmrs.CareSetting,
+	 *      org.openmrs.OrderType, boolean)
+	 *      
+	 * This method works exactly the same; it only adds visit to the search criteria.
+	 * It effectively surpasses the above method; the old one is however kept for backward
+	 * compatibility reasons.
+	 * 
+	 * @param visit the {@link Visit} to restrict orders (optional)
+	 *      
+	 * @since 2.7.0
+	 */
+	@Authorized(PrivilegeConstants.GET_ORDERS)
+	public List<Order> getOrders(Patient patient, Visit visit, CareSetting careSetting, OrderType orderType,
+			boolean includeVoided);
 }

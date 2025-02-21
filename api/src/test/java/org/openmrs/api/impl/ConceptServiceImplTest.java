@@ -35,12 +35,15 @@ import org.openmrs.ConceptDescription;
 import org.openmrs.ConceptMapType;
 import org.openmrs.ConceptName;
 import org.openmrs.ConceptNameTag;
+import org.openmrs.ConceptNumeric;
 import org.openmrs.ConceptProposal;
+import org.openmrs.ConceptReferenceRange;
 import org.openmrs.ConceptReferenceTerm;
 import org.openmrs.ConceptSearchResult;
 import org.openmrs.ConceptSet;
 import org.openmrs.ConceptSource;
 import org.openmrs.Drug;
+import org.openmrs.DrugReferenceMap;
 import org.openmrs.api.APIException;
 import org.openmrs.api.ConceptNameType;
 import org.openmrs.api.ConceptService;
@@ -54,7 +57,7 @@ import org.openmrs.test.jupiter.BaseContextSensitiveTest;
 public class ConceptServiceImplTest extends BaseContextSensitiveTest {
 	
 	protected ConceptService conceptService = null;
-	
+	private final String TEST_CRITERIA = "$patient.getAge() >= 1 && $patient.getAge() <= 70";
 	
 	/**
 	 * Run this before each unit test in this class. The "@Before" method in
@@ -344,6 +347,31 @@ public class ConceptServiceImplTest extends BaseContextSensitiveTest {
 		conceptService.saveDrug(savedDrug);
 		assertTrue(conceptService.getDrug(savedDrug.getDrugId()).getCombination());
 	}
+
+	/**
+	 * @see ConceptServiceImpl#saveDrug(Drug)
+	 */
+	@Test
+	public void saveDrug_shouldSaveNewDrugReferenceMap() {
+		Drug drug = new Drug();
+		Concept concept = new Concept();
+		concept.addName(new ConceptName("Concept", new Locale("en", "US")));
+		concept.addDescription(new ConceptDescription("Description", new Locale("en", "US")));
+		concept.setConceptClass(new ConceptClass(1));
+		concept.setDatatype(new ConceptDatatype(1));
+		Concept savedConcept = conceptService.saveConcept(concept);
+		drug.setConcept(savedConcept);
+		drug.setName("Example Drug");
+		ConceptMapType sameAs = conceptService.getConceptMapTypeByUuid(ConceptMapType.SAME_AS_MAP_TYPE_UUID);
+		ConceptSource snomedCt = conceptService.getConceptSourceByName("SNOMED CT");
+		DrugReferenceMap map = new DrugReferenceMap();
+		map.setDrug(drug);
+		map.setConceptMapType(sameAs);
+		map.setConceptReferenceTerm(new ConceptReferenceTerm(snomedCt, "example", ""));
+		drug.addDrugReferenceMap(map);
+		drug = conceptService.saveDrug(drug);
+		assertEquals(1, conceptService.getDrug(drug.getDrugId()).getDrugReferenceMaps().size());
+	}
 	
 	/**
 	 * @see ConceptServiceImpl#purgeConcept(Concept)
@@ -489,7 +517,7 @@ public class ConceptServiceImplTest extends BaseContextSensitiveTest {
 	 */
 	@Test
 	public void getAllConceptClasses_shouldReturnAListOfAllConceptClasses() {
-		int resultSize = 20;
+		int resultSize = 21;
 		List<ConceptClass> conceptClasses = conceptService.getAllConceptClasses();
 		assertEquals(resultSize, conceptClasses.size());
 	}
@@ -499,7 +527,7 @@ public class ConceptServiceImplTest extends BaseContextSensitiveTest {
 	 */
 	@Test
 	public void getAllConceptClasses_shouldReturnAllConceptClassesIncludingRetiredOnesWhenGivenTrue() {
-		int resultSizeWhenTrue = 20;
+		int resultSizeWhenTrue = 21;
 		List<ConceptClass> conceptClasses = conceptService.getAllConceptClasses(true);
 		assertEquals(resultSizeWhenTrue, conceptClasses.size());
 	}
@@ -631,7 +659,7 @@ public class ConceptServiceImplTest extends BaseContextSensitiveTest {
 	 */
 	@Test
 	public void getAllConceptProposals_shouldReturnAllConceptProposalsIncludingRetiredOnesWhenGivenTrue() {
-		int matchedConceptProposals = 2;
+		int matchedConceptProposals = 3;
 		List<ConceptProposal> conceptProposals = conceptService.getAllConceptProposals(true);
 		assertEquals(matchedConceptProposals, conceptProposals.size());
 	}
@@ -898,5 +926,63 @@ public class ConceptServiceImplTest extends BaseContextSensitiveTest {
 		ConceptNameTag conceptNameTag = conceptService.getConceptNameTag(1);
 		assertNotNull(conceptNameTag);
 		assertEquals(conceptNameTag, conceptService.getConceptNameTagByName(conceptNameTag.getTag()));
+	}
+
+	/**
+	 * @see ConceptServiceImpl#saveConceptProposal(ConceptProposal)
+	 */
+	@Test
+	public void saveConceptReferenceRange_shouldReturnSavedConceptReferenceRangeObject() {
+		final Double HIGH_ABSOLUTE = 120.0;
+		
+		ConceptReferenceRange conceptReferenceRange = new ConceptReferenceRange();
+		conceptReferenceRange.setHiAbsolute(HIGH_ABSOLUTE);
+		conceptReferenceRange.setConceptNumeric(createConceptNumeric());
+		conceptReferenceRange.setCriteria(TEST_CRITERIA);
+		ConceptReferenceRange savedConceptReferenceRange = conceptService.saveConceptReferenceRange(conceptReferenceRange);
+		assertEquals(HIGH_ABSOLUTE, savedConceptReferenceRange.getHiAbsolute());
+
+		// Update
+		final Double NEW_HIGH_ABSOLUTE = 200.0;
+		savedConceptReferenceRange.setHiAbsolute(NEW_HIGH_ABSOLUTE);
+
+		ConceptReferenceRange updatedConceptReferenceRange = conceptService.saveConceptReferenceRange(savedConceptReferenceRange);
+		assertEquals(NEW_HIGH_ABSOLUTE, updatedConceptReferenceRange.getHiAbsolute());
+	}
+
+	/**
+	 * @see ConceptServiceImpl#saveConceptProposal(ConceptProposal)
+	 */
+	@Test
+	public void saveConceptReferenceRange_shouldFailGivenNull() {
+		assertThrows(IllegalArgumentException.class, () -> conceptService.saveConceptReferenceRange(null));
+	}
+
+	/**
+	 * @see ConceptServiceImpl#getConceptReferenceRangesByConceptId(Integer) 
+	 */
+	@Test
+	public void getConceptReferenceRangesByConceptId_shouldReturnConceptReferenceRangeIfFound() {
+		ConceptNumeric conceptNumeric = createConceptNumeric();
+		
+		ConceptReferenceRange conceptReferenceRange = new ConceptReferenceRange();
+		conceptReferenceRange.setHiAbsolute(120.0);
+		conceptReferenceRange.setConceptNumeric(conceptNumeric);
+		conceptReferenceRange.setCriteria(TEST_CRITERIA);
+		conceptService.saveConceptReferenceRange(conceptReferenceRange);
+
+		List<ConceptReferenceRange> savedConceptReferenceRange = conceptService.getConceptReferenceRangesByConceptId(conceptNumeric.getId());
+		assertEquals(1, savedConceptReferenceRange.size());
+		assertEquals(conceptReferenceRange.getHiAbsolute(), savedConceptReferenceRange.get(0).getHiAbsolute());
+	}
+	
+	private ConceptNumeric createConceptNumeric() {
+		ConceptNumeric conceptNumeric = new ConceptNumeric();
+		ConceptName fullySpecifiedName = new ConceptName("concept name", new Locale("fr", "CA"));
+		conceptNumeric.addName(fullySpecifiedName);
+		conceptNumeric.addDescription(new ConceptDescription("some description", null));
+		conceptNumeric.setDatatype(new ConceptDatatype(1));
+		conceptNumeric.setConceptClass(new ConceptClass(1));
+		return (ConceptNumeric) Context.getConceptService().saveConcept(conceptNumeric);
 	}
 }

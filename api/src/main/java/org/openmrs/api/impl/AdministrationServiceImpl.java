@@ -14,10 +14,12 @@ import java.net.InetAddress;
 import java.net.UnknownHostException;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Calendar;
 import java.util.Collection;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -32,7 +34,10 @@ import org.apache.commons.lang3.StringUtils;
 import org.openmrs.ConceptSource;
 import org.openmrs.GlobalProperty;
 import org.openmrs.ImplementationId;
+import org.openmrs.OpenmrsData;
+import org.openmrs.OpenmrsMetadata;
 import org.openmrs.OpenmrsObject;
+import org.openmrs.Privilege;
 import org.openmrs.User;
 import org.openmrs.api.APIException;
 import org.openmrs.api.AdministrationService;
@@ -40,10 +45,19 @@ import org.openmrs.api.EventListeners;
 import org.openmrs.api.GlobalPropertyListener;
 import org.openmrs.api.context.Context;
 import org.openmrs.api.db.AdministrationDAO;
+import org.openmrs.customdatatype.CustomDatatype;
 import org.openmrs.customdatatype.CustomDatatypeUtil;
+import org.openmrs.customdatatype.CustomValueDescriptor;
+import org.openmrs.customdatatype.Customizable;
+import org.openmrs.customdatatype.SingleCustomValue;
+import org.openmrs.layout.LayoutSupport;
+import org.openmrs.layout.LayoutTemplate;
+import org.openmrs.messagesource.PresentationMessage;
 import org.openmrs.module.Module;
 import org.openmrs.module.ModuleFactory;
 import org.openmrs.module.ModuleUtil;
+import org.openmrs.obs.ComplexData;
+import org.openmrs.person.PersonMergeLogData;
 import org.openmrs.util.HttpClient;
 import org.openmrs.util.LocaleUtility;
 import org.openmrs.util.OpenmrsConstants;
@@ -150,7 +164,54 @@ public class AdministrationServiceImpl extends BaseOpenmrsService implements Adm
 			return null;
 		}
 		
-		return dao.getGlobalProperty(propertyName);
+		GlobalProperty gp = dao.getGlobalPropertyObject(propertyName);
+		if (gp != null) {
+			if (canViewGlobalProperty(gp)) {
+				return gp.getPropertyValue();
+			} else {
+				throw new APIException("GlobalProperty.error.privilege.required.view", new Object[] {
+					gp.getViewPrivilege().getPrivilege(), propertyName });
+			}
+		} else {
+			return null;
+		}
+	}
+	
+	private boolean canViewGlobalProperty(GlobalProperty property) {
+		if (property.getViewPrivilege() == null) {
+			return true;
+		}
+		
+		return Context.getAuthenticatedUser().hasPrivilege(property.getViewPrivilege().getPrivilege());
+	}
+	
+	private boolean canDeleteGlobalProperty(GlobalProperty property) {
+		if (property.getDeletePrivilege() == null) {
+			return true;
+		}
+		
+		return Context.getAuthenticatedUser().hasPrivilege(property.getDeletePrivilege().getPrivilege());
+	}
+	
+	private boolean canEditGlobalProperty(GlobalProperty property) {
+		if (property.getEditPrivilege() == null) {
+			return true;
+		}
+		
+		return Context.getAuthenticatedUser().hasPrivilege(property.getEditPrivilege().getPrivilege());
+	}
+	
+	private List<GlobalProperty> filterGlobalPropertiesByViewPrivilege(List<GlobalProperty> properties) {
+		if (properties != null) {
+			for (Iterator<GlobalProperty> iterator = properties.iterator(); iterator.hasNext();) {
+				GlobalProperty property = iterator.next();
+				Privilege vp = property.getViewPrivilege();
+				if (vp != null && !Context.getAuthenticatedUser().hasPrivilege(vp.getPrivilege())) {
+					iterator.remove();
+				}
+			}
+		}
+		return properties;
 	}
 	
 	/**
@@ -173,7 +234,17 @@ public class AdministrationServiceImpl extends BaseOpenmrsService implements Adm
 	@Override
 	@Transactional(readOnly = true)
 	public GlobalProperty getGlobalPropertyObject(String propertyName) {
-		return dao.getGlobalPropertyObject(propertyName);
+		GlobalProperty gp = dao.getGlobalPropertyObject(propertyName);
+		if (gp != null) {
+			if (canViewGlobalProperty(gp)) {
+				return gp;
+			} else {
+				throw new APIException("GlobalProperty.error.privilege.required.view", new Object[] {
+					gp.getViewPrivilege().getPrivilege(), propertyName });
+			}
+		} else {
+			return null;
+		}
 	}
 	
 	/**
@@ -201,6 +272,12 @@ public class AdministrationServiceImpl extends BaseOpenmrsService implements Adm
 		if (gp == null) {
 			throw new IllegalStateException("Global property with the given propertyName does not exist" + propertyName);
 		}
+		
+		if (!canEditGlobalProperty(gp)) {
+			throw new APIException("GlobalProperty.error.privilege.required.edit", new Object[] {
+				gp.getEditPrivilege().getPrivilege(), propertyName });
+		}
+		
 		gp.setPropertyValue(propertyValue);
 		dao.saveGlobalProperty(gp);
 	}
@@ -211,7 +288,7 @@ public class AdministrationServiceImpl extends BaseOpenmrsService implements Adm
 	@Override
 	@Transactional(readOnly = true)
 	public List<GlobalProperty> getAllGlobalProperties() throws APIException {
-		return dao.getAllGlobalProperties();
+		return filterGlobalPropertiesByViewPrivilege(dao.getAllGlobalProperties());
 	}
 	
 	/**
@@ -220,7 +297,7 @@ public class AdministrationServiceImpl extends BaseOpenmrsService implements Adm
 	@Override
 	@Transactional(readOnly = true)
 	public List<GlobalProperty> getGlobalPropertiesByPrefix(String prefix) {
-		return dao.getGlobalPropertiesByPrefix(prefix);
+		return filterGlobalPropertiesByViewPrivilege(dao.getGlobalPropertiesByPrefix(prefix));
 	}
 	
 	/**
@@ -229,7 +306,7 @@ public class AdministrationServiceImpl extends BaseOpenmrsService implements Adm
 	@Override
 	@Transactional(readOnly = true)
 	public List<GlobalProperty> getGlobalPropertiesBySuffix(String suffix) {
-		return dao.getGlobalPropertiesBySuffix(suffix);
+		return filterGlobalPropertiesByViewPrivilege(dao.getGlobalPropertiesBySuffix(suffix));
 	}
 	
 	/**
@@ -237,6 +314,11 @@ public class AdministrationServiceImpl extends BaseOpenmrsService implements Adm
 	 */
 	@Override
 	public void purgeGlobalProperty(GlobalProperty globalProperty) throws APIException {
+		if (!canDeleteGlobalProperty(globalProperty)) {
+			throw new APIException("GlobalProperty.error.privilege.required.purge", new Object[] {
+				globalProperty.getDeletePrivilege().getPrivilege(), globalProperty.getProperty() });
+		}
+		
 		notifyGlobalPropertyDelete(globalProperty.getProperty());
 		dao.deleteGlobalProperty(globalProperty);
 	}
@@ -265,6 +347,12 @@ public class AdministrationServiceImpl extends BaseOpenmrsService implements Adm
 	@Override
 	@CacheEvict(value = "userSearchLocales", allEntries = true)
 	public GlobalProperty saveGlobalProperty(GlobalProperty gp) throws APIException {
+
+		if (!canEditGlobalProperty(gp)) {
+			throw new APIException("GlobalProperty.error.privilege.required.edit", new Object[] {
+				gp.getEditPrivilege().getPrivilege(), gp.getProperty() });
+		}
+		
 		// only try to save it if the global property has a key
 		if (gp.getProperty() != null && gp.getProperty().length() > 0) {
 			if (gp.getProperty().equals(OpenmrsConstants.GLOBAL_PROPERTY_LOCALE_ALLOWED_LIST)) {
@@ -621,7 +709,15 @@ public class AdministrationServiceImpl extends BaseOpenmrsService implements Adm
 	@Override
 	@Transactional(readOnly = true)
 	public GlobalProperty getGlobalPropertyByUuid(String uuid) {
-		return dao.getGlobalPropertyByUuid(uuid);
+		GlobalProperty gp =  dao.getGlobalPropertyByUuid(uuid);
+		if (gp == null) {
+			return null;
+		} else if (canViewGlobalProperty(gp)) {
+			return gp;
+		} else {
+			throw new APIException("GlobalProperty.error.privilege.required.view", new Object[] {
+				gp.getViewPrivilege().getPrivilege(), gp.getProperty() });
+		}
 	}
 	
 	/**
@@ -857,5 +953,33 @@ public class AdministrationServiceImpl extends BaseOpenmrsService implements Adm
 	public void updatePostgresSequence() {
 		dao.updatePostgresSequence();
 	}
-	
+
+	@Override
+	public List<String> getSerializerWhitelistTypes() {
+		List<String> whitelistTypes = new ArrayList<>();
+		List<Class<?>> hierarchyTypes = getSerializerDefaultWhitelistHierarchyTypes();
+		for (Class<?> hierarchyType: hierarchyTypes) {
+			whitelistTypes.add(GP_SERIALIZER_WHITELIST_HIERARCHY_TYPES_PREFIX + hierarchyType.getName());
+		}
+
+		List<GlobalProperty> gpTypes = getGlobalPropertiesBySuffix(
+			AdministrationService.GP_SUFFIX_SERIALIZER_WHITELIST_TYPES);
+		for (GlobalProperty gpType: gpTypes) {
+			String[] types = gpType.getPropertyValue().split(",");
+			for (String type: types) {
+				if(!StringUtils.isBlank(type)) {
+					whitelistTypes.add(type.trim());
+				}
+			}
+		}
+
+		return whitelistTypes;
+	}
+	public static List<Class<?>> getSerializerDefaultWhitelistHierarchyTypes() {
+		List<Class<?>> types = Arrays.asList(OpenmrsObject.class, OpenmrsMetadata.class, OpenmrsData.class, 
+			CustomDatatype.class, SingleCustomValue.class, CustomValueDescriptor.class, Customizable.class,
+			LayoutTemplate.class, LayoutSupport.class, ComplexData.class, PresentationMessage.class,
+			PersonMergeLogData.class);
+		return types;
+	}
 }
